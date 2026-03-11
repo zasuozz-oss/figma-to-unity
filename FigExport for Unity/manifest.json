@@ -8,7 +8,9 @@
   ],
   "networkAccess": {
     "allowedDomains": [
-      "https://cdnjs.cloudflare.com"
-    ]
+      "https://cdnjs.cloudflare.com",
+      "*"
+    ],
+    "reasoning": "CDN for JSZip library. WebSocket connection to local MCP Bridge server."
   }
 }

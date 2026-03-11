@@ -1,8 +1,6 @@
-# Figma-To-Unity — Standalone Export & Import Tool
+# Figma-To-Unity — Export & Import Tool + MCP Bridge
 
-> Công cụ chuyển đổi thiết kế Figma sang Unity UI một cách tự động. Gồm 2 phần hoạt động độc lập: **Figma Plugin** (export) và **Unity Editor** (import).
-
-![Workflow Pipeline](document/images/workflow_pipeline.png)
+> Công cụ chuyển đổi thiết kế Figma sang Unity UI tự động. Gồm 3 phần: **Figma Plugin** (export + MCP client), **MCP Bridge Server**, và **Unity Editor Importer**.
 
 ---
 
@@ -10,14 +8,13 @@
 
 - ✅ **Export trực tiếp từ Figma** — Plugin chạy trong Figma, chọn frame → export manifest + PNG
 - ✅ **Import vào Unity** — Editor Window parse manifest, tạo UI hierarchy tự động
-- ✅ **Hỗ trợ UGUI & 2D Object** — Chọn render pipeline phù hợp
-- ✅ **Auto Layout → Layout Groups** — Figma auto-layout chuyển sang Unity HorizontalLayoutGroup / VerticalLayoutGroup
+- ✅ **MCP Bridge tích hợp** — AI tools (Cursor, Antigravity, Claude) đọc Figma design qua MCP protocol
+- ✅ **Dual Mode UI** — Chuyển giữa Export mode và MCP mode trong cùng 1 plugin
+- ✅ **Auto Layout → Layout Groups** — Figma auto-layout → Unity HorizontalLayoutGroup / VerticalLayoutGroup
 - ✅ **TextMeshPro** — Text tự động map font, size, color, alignment
 - ✅ **Per-element Merge/Exclude/PNG** — Tuỳ chỉnh từng element trong layer tree
 - ✅ **Hash-based Deduplication** — Tự động loại bỏ PNG trùng lặp
-- ✅ **Raycast Optimization** — Tự động disable `raycastTarget` cho decorative elements
-- ✅ **Scene / Prefab / Both** — Chọn output mode linh hoạt
-- ✅ **Canvas Scale Presets** — Auto-detect scale từ design size
+- ✅ **Minimize Mode** — Thu nhỏ plugin thành thanh trạng thái MCP nhỏ gọn
 
 ---
 
@@ -25,31 +22,38 @@
 
 ```
 figma-to-unity/
-├── FigExport for Unity/       # Figma Plugin (TypeScript)
-│   └── src/
-│       ├── main.ts            # Plugin entry point
-│       ├── ui.ts / ui.html    # Plugin UI (layer tree, settings)
-│       ├── traverser.ts       # DFS node traversal
-│       ├── mapper.ts          # Figma constraints → Unity anchors
-│       ├── exporter.ts        # PNG export + manifest assembly
-│       ├── naming.ts          # File naming rules
-│       └── types.ts           # Type definitions
+├── FigExport for Unity/          # Figma Plugin + MCP Server
+│   ├── src/                      # Plugin source (TypeScript)
+│   │   ├── main.ts               # Plugin entry point (Figma sandbox)
+│   │   ├── ui.ts / ui.html       # Plugin UI (layer tree, settings, MCP client)
+│   │   ├── traverser.ts          # DFS node traversal
+│   │   ├── mapper.ts             # Figma constraints → Unity anchors
+│   │   ├── exporter.ts           # PNG export + manifest assembly
+│   │   ├── naming.ts             # File naming rules
+│   │   └── types.ts              # Type definitions
+│   │
+│   ├── server/                   # MCP Bridge Server (TypeScript)
+│   │   └── src/
+│   │       ├── index.ts          # Server entry point (stdio transport)
+│   │       ├── leader.ts         # HTTP server + WebSocket bridge
+│   │       ├── follower.ts       # Proxy to leader via HTTP
+│   │       ├── election.ts       # Leader/follower election
+│   │       ├── bridge.ts         # WebSocket bridge to Figma plugin
+│   │       ├── tools.ts          # MCP tool implementations
+│   │       ├── schema.ts         # Zod input validation
+│   │       └── types.ts          # Shared types
+│   │
+│   ├── dist/                     # Build output (plugin)
+│   └── manifest.json             # Figma plugin manifest
 │
-├── UnityFig Importer/         # Unity Editor Package (C#)
-│   └── Editor/
-│       ├── FigmaImporterWindow.cs  # Main EditorWindow
-│       ├── ManifestParser.cs       # JSON → C# objects
-│       ├── TextureImportHelper.cs  # PNG → Sprite import
-│       ├── HierarchyBuilder.cs     # Build UI hierarchy
-│       └── Data/
-│           └── ManifestData.cs     # Data model classes
-│
-└── document/                  # Tài liệu kỹ thuật
-    └── docs/
-        ├── MANIFEST_SPEC.md   # Manifest JSON schema
-        ├── ANCHOR_MAPPING.md  # Constraint → Anchor mapping
-        ├── NAMING.md          # File naming conventions
-        └── PLAN.md            # Development plan
+└── UnityFig Importer/            # Unity Editor Package (C#)
+    └── Editor/
+        ├── FigmaImporterWindow.cs    # Main EditorWindow
+        ├── ManifestParser.cs         # JSON → C# objects
+        ├── TextureImportHelper.cs    # PNG → Sprite import
+        ├── HierarchyBuilder.cs       # Build UI hierarchy
+        └── Data/
+            └── ManifestData.cs       # Data model classes
 ```
 
 ---
@@ -64,9 +68,10 @@ figma-to-unity/
 | **Unity** | 2022.3+ LTS |
 | **TextMeshPro** | Installed via Package Manager |
 | **Newtonsoft JSON** | Installed via Package Manager |
-| **Node.js** | >= 18 (để build plugin) |
+| **Node.js** | >= 20 (để build plugin + server) |
+| **Bun** (optional) | >= 1.0 (để build server nhanh hơn) |
 
-### Bước 1: Cài đặt Figma Plugin
+### Bước 1: Build Figma Plugin
 
 ```bash
 cd "FigExport for Unity"
@@ -79,13 +84,36 @@ Trong Figma Desktop:
 2. Chọn file `FigExport for Unity/manifest.json`
 3. Plugin sẽ xuất hiện trong menu Plugins
 
-### Bước 2: Cài đặt Unity Importer
+### Bước 2: Build MCP Bridge Server
 
-Có 2 cách:
+```bash
+cd "FigExport for Unity/server"
+bun install    # hoặc npm install
+bun run build  # hoặc npx tsc
+```
+
+### Bước 3: Cấu hình MCP cho AI Tool
+
+Thêm vào file cấu hình MCP của tool bạn dùng (ví dụ `mcp_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "figma-bridge": {
+      "command": "node",
+      "args": ["<path-to-repo>/FigExport for Unity/server/dist/index.js"]
+    }
+  }
+}
+```
+
+> **Lưu ý:** Thay `<path-to-repo>` bằng đường dẫn tuyệt đối tới thư mục repo trên máy bạn.
+
+### Bước 4: Cài đặt Unity Importer
 
 **Cách 1 — Copy thư mục:**
 ```
-Copy thư mục "UnityFig Importer" vào thư mục Assets/Packages/ trong Unity project
+Copy thư mục "UnityFig Importer" vào Assets/ trong Unity project
 ```
 
 **Cách 2 — Unity Package Manager (Local):**
@@ -93,90 +121,42 @@ Copy thư mục "UnityFig Importer" vào thư mục Assets/Packages/ trong Unity
 2. **"+"** → **Add package from disk...**
 3. Chọn file `UnityFig Importer/package.json`
 
+**Cách 3 — Git URL:**
+```
+https://github.com/<user>/figma-to-unity.git?path=UnityFig Importer
+```
+
 ---
 
 ## 🚀 Hướng Dẫn Sử Dụng
 
-### Step 1: Export từ Figma
-
-![Figma Plugin UI](document/images/figma_plugin_ui.png)
+### Export từ Figma
 
 1. Mở design trong Figma Desktop
-2. **Chọn Frame** cần export (ví dụ: Login Screen)
-3. Chạy plugin: **Plugins** → **FigExport for Unity**
+2. **Chọn Frame** cần export
+3. Chạy plugin: **Plugins** → **Figma to Unity**
 4. Trong plugin UI:
-   - Xem **layer tree** — bật/tắt từng element
-   - Click **"Merge"** trên element để flatten với children thành 1 PNG
-   - Click **"PNG"** trên TEXT element để rasterize thay vì dùng TMP
-   - Click **"×"** để exclude element
+   - Chuyển tab **Export** để xuất design
+   - Chuyển tab **MCP** để xem trạng thái MCP Bridge
+   - Click **▬** để thu nhỏ plugin (hiện thanh trạng thái MCP)
+   - Tuỳ chỉnh **Merge / PNG / Exclude** trên từng element
    - Chọn **Export Scale** (@1x, @2x, @3x, @4x)
-5. Click **"Export"** → Plugin xuất ra thư mục chứa:
-   ```
-   FigmaExport_LoginScreen_20260310/
-   ├── manifest.json      # Metadata + UI hierarchy
-   ├── bg_login.png        # Background image
-   ├── btn_login.png       # Button image
-   ├── icon_email.png      # Email icon
-   └── ...                 # Các PNG assets khác
-   ```
+5. Click **"Export"** → Download ZIP chứa manifest + PNG assets
 
-### Step 2: Import vào Unity
+### Import vào Unity
 
-![Unity Importer UI](document/images/unity_importer_ui.png)
-
-1. **Copy thư mục export** vào bất kỳ đâu trong `Assets/`
+1. Giải nén ZIP vào `Assets/` trong Unity project
 2. Mở **Window** → **Figma Importer**
-3. Cấu hình:
-   - **Export Folder**: Chọn thư mục chứa `manifest.json`
-   - **Output Mode**: Scene / Prefab / Both
-   - **Canvas Settings**: Reference Resolution, Match Width or Height
-   - **Sprite Output**: Chọn thư mục lưu sprites
-   - **Font Mapping**: Auto-match hoặc chọn thủ công
-4. Click **"Build UI"**
-5. Kết quả:
-   - **Scene mode**: Canvas + UI hierarchy được tạo trong Scene
-   - **Prefab mode**: Prefab được lưu vào thư mục chỉ định
+3. Chọn thư mục chứa `manifest.json`
+4. Chọn output mode (Scene / Prefab / Both)
+5. Click **"Build UI"**
 
----
+### MCP Bridge (cho AI Tools)
 
-## ⚙️ Manifest Format
-
-Export file `manifest.json` theo schema v1.0:
-
-```json
-{
-  "version": "1.0",
-  "screen": {
-    "name": "Login Screen",
-    "figmaSize": { "w": 360, "h": 800 },
-    "unityRefResolution": { "w": 720, "h": 1600 },
-    "exportScale": 2
-  },
-  "elements": [
-    {
-      "id": "1:234",
-      "name": "Login Button",
-      "figmaType": "FRAME",
-      "parentId": "1:100",
-      "rect": { "x": 30, "y": 500, "w": 300, "h": 50 },
-      "unity": {
-        "anchorMin": [0, 0],
-        "anchorMax": [1, 1],
-        "pivot": [0.5, 0.5],
-        "offsetMin": [30, -550],
-        "offsetMax": [-30, -500]
-      },
-      "components": ["Image"],
-      "asset": "btn_login@2x.png",
-      "interactive": true
-    }
-  ],
-  "assets": [...],
-  "fonts": [...]
-}
-```
-
-> Chi tiết đầy đủ: [MANIFEST_SPEC.md](document/docs/MANIFEST_SPEC.md)
+Khi plugin Figma đang mở, MCP Bridge tự động kết nối qua WebSocket (port 1994). AI tools có thể:
+- Đọc document tree, selection, styles
+- Export screenshots theo node ID
+- Lấy design context, variables, metadata
 
 ---
 
@@ -184,16 +164,14 @@ Export file `manifest.json` theo schema v1.0:
 
 | Nút | Chức năng |
 |:---|:---|
-| **Merge** | Flatten parent + tất cả children thành 1 PNG duy nhất |
-| **PNG** (text) | Rasterize TEXT element thành PNG thay vì dùng TextMeshPro |
+| **Merge** | Flatten parent + children thành 1 PNG duy nhất |
+| **PNG** (text) | Rasterize TEXT thành PNG thay vì TextMeshPro |
 | **×** (exclude) | Bỏ qua element, không export |
-| **👁** (visibility) | Ẩn/hiện element trong Figma preview |
+| **👁** (visibility) | Ẩn/hiện element trong Figma |
 
 ---
 
 ## 📐 Constraint → Anchor Mapping
-
-Figma constraints được tự động chuyển sang Unity RectTransform anchors:
 
 | Figma Constraint | Unity Anchor |
 |:---|:---|
@@ -205,57 +183,34 @@ Figma constraints được tự động chuyển sang Unity RectTransform anchor
 | `BOTTOM` | anchorMin.y = 0, anchorMax.y = 0 |
 | `TOP_BOTTOM` (scale) | anchorMin.y = 0, anchorMax.y = 1 |
 
-> Chi tiết đầy đủ: [ANCHOR_MAPPING.md](document/docs/ANCHOR_MAPPING.md)
-
 ---
 
-## 🗂️ Supported Figma Node Types
+## 🔒 Bảo Mật
 
-| Figma Type | Unity Output |
-|:---|:---|
-| **FRAME** | GameObject + RectTransform + Image (nếu có fill) |
-| **TEXT** | GameObject + TextMeshProUGUI |
-| **RECTANGLE** | GameObject + Image |
-| **VECTOR** | PNG asset + Image |
-| **BOOLEAN_OPERATION** | PNG asset + Image |
-| **COMPONENT / INSTANCE** | Tương tự FRAME |
-| **GROUP** | GameObject (container only) |
-
----
-
-## 🎨 Build Options
-
-| Option | Mô tả | Mặc định |
-|:---|:---|:---|
-| **Import Textures** | Copy + configure PNG → Sprite | ✅ On |
-| **Apply 9-Slice** | Tự động set sprite border từ cornerRadius | ✅ On |
-| **Disable Raycast** | Tắt raycastTarget cho decorative elements | ✅ On |
-| **Scale to Resolution** | Scale positions theo reference resolution | ✅ On |
+- Server chỉ bind `localhost:1994` — không expose ra mạng
+- File write có path traversal protection + exclusive write flag
+- Input validation (Zod) cho tất cả MCP tool calls
+- Không có `eval()`, `exec()`, hoặc hardcoded secrets
 
 ---
 
 ## 📝 Development
 
 ### Build Figma Plugin
-
 ```bash
 cd "FigExport for Unity"
 npm run build        # Build một lần
 npm run watch        # Watch mode (auto-rebuild)
 ```
 
-### Cấu trúc Plugin Build
-
-```
-FigExport for Unity/
-├── dist/
-│   ├── main.js      # Plugin backend (Figma sandbox)
-│   └── ui.html      # Plugin UI (iframe)
-└── manifest.json    # Figma plugin manifest
+### Build MCP Server
+```bash
+cd "FigExport for Unity/server"
+bun run build        # TypeScript → JavaScript
 ```
 
 ---
 
 ## 📝 License
 
-Private — All rights reserved.
+MIT License

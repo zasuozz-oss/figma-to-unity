@@ -5,6 +5,8 @@
     "scripts": {
         "build": "rimraf dist && node esbuild.config.mjs",
         "watch": "node esbuild.config.mjs --watch",
+        "server": "cd server && bun run src/index.ts",
+        "dev": "rimraf dist && node esbuild.config.mjs && cd server && bun run src/index.ts",
         "clean": "rimraf dist"
     },
     "devDependencies": {

@@ -244,6 +244,12 @@ figma.ui.onmessage = async function (msg: UIToMainMessage) {
         case 'cancel':
             figma.closePlugin();
             break;
+
+        case 'mcp-request':
+            handleMcpRequest(msg.payload).catch(function (err: any) {
+                console.error('[MCP] Request handler error:', err);
+            });
+            break;
     }
 };
 
@@ -405,4 +411,232 @@ async function handlePreviewElement(nodeId: string, excludedIds: string[]): Prom
 
 function postToUI(msg: MainToUIMessage): void {
     figma.ui.postMessage(msg);
+}
+
+// =============================================================================
+// MCP Bridge — Serializer & Request Handler
+// =============================================================================
+
+function serializeNode(node: BaseNode, depth: number = 1): any {
+    var result: any = {
+        id: node.id,
+        name: node.name,
+        type: node.type,
+    };
+    if ('visible' in node) result.visible = (node as SceneNode).visible;
+    if ('locked' in node) result.locked = (node as any).locked;
+    if ('opacity' in node) result.opacity = (node as any).opacity;
+    if ('width' in node && 'height' in node) {
+        result.width = (node as SceneNode).width;
+        result.height = (node as SceneNode).height;
+    }
+    if ('x' in node && 'y' in node) {
+        result.x = (node as SceneNode).x;
+        result.y = (node as SceneNode).y;
+    }
+    if ('fills' in node) {
+        var fills = (node as any).fills;
+        if (typeof fills !== 'symbol') result.fills = fills;
+    }
+    if ('strokes' in node) result.strokes = (node as any).strokes;
+    if ('cornerRadius' in node) {
+        var cr = (node as any).cornerRadius;
+        if (typeof cr !== 'symbol') result.cornerRadius = cr;
+    }
+    if ('characters' in node) {
+        result.characters = (node as any).characters;
+        if ('fontSize' in node) {
+            var fs = (node as any).fontSize;
+            if (typeof fs !== 'symbol') result.fontSize = fs;
+        }
+    }
+    if ('layoutMode' in node) {
+        var lm = (node as any).layoutMode;
+        if (lm && lm !== 'NONE') {
+            result.layoutMode = lm;
+            result.itemSpacing = (node as any).itemSpacing;
+            result.paddingLeft = (node as any).paddingLeft;
+            result.paddingRight = (node as any).paddingRight;
+            result.paddingTop = (node as any).paddingTop;
+            result.paddingBottom = (node as any).paddingBottom;
+        }
+    }
+    if ('constraints' in node) result.constraints = (node as any).constraints;
+    if ('effects' in node) result.effects = (node as any).effects;
+
+    // Recurse into children
+    if (depth > 0 && 'children' in node) {
+        result.children = (node as any).children.map(function (child: BaseNode) {
+            return serializeNode(child, depth - 1);
+        });
+    } else if ('children' in node) {
+        result.childCount = (node as any).children.length;
+    }
+
+    return result;
+}
+
+async function handleMcpRequest(req: any): Promise<void> {
+    var response: any = { type: req.type, requestId: req.requestId };
+
+    try {
+        switch (req.type) {
+            case 'get_document': {
+                var pages = figma.root.children.map(function (page: PageNode) {
+                    return {
+                        id: page.id,
+                        name: page.name,
+                        childCount: page.children.length,
+                    };
+                });
+                response.data = {
+                    name: figma.root.name,
+                    currentPage: {
+                        id: figma.currentPage.id,
+                        name: figma.currentPage.name,
+                    },
+                    pages: pages,
+                };
+                break;
+            }
+
+            case 'get_selection': {
+                var sel = figma.currentPage.selection;
+                response.data = sel.map(function (node: SceneNode) {
+                    return serializeNode(node, 2);
+                });
+                break;
+            }
+
+            case 'get_node': {
+                var nodeIds = req.nodeIds || [];
+                var nodes: any[] = [];
+                for (var ni = 0; ni < nodeIds.length; ni++) {
+                    var n = figma.getNodeById(nodeIds[ni]);
+                    if (n) nodes.push(serializeNode(n, 2));
+                }
+                response.data = nodes;
+                break;
+            }
+
+            case 'get_styles': {
+                var paintStyles = figma.getLocalPaintStyles().map(function (s: PaintStyle) {
+                    return { id: s.id, name: s.name, type: 'PAINT', paints: s.paints };
+                });
+                var textStyles = figma.getLocalTextStyles().map(function (s: TextStyle) {
+                    return {
+                        id: s.id, name: s.name, type: 'TEXT',
+                        fontSize: s.fontSize, fontName: s.fontName,
+                        lineHeight: s.lineHeight, letterSpacing: s.letterSpacing,
+                    };
+                });
+                var effectStyles = figma.getLocalEffectStyles().map(function (s: EffectStyle) {
+                    return { id: s.id, name: s.name, type: 'EFFECT', effects: s.effects };
+                });
+                response.data = { paintStyles, textStyles, effectStyles };
+                break;
+            }
+
+            case 'get_metadata': {
+                response.data = {
+                    fileName: figma.root.name,
+                    currentPage: {
+                        id: figma.currentPage.id,
+                        name: figma.currentPage.name,
+                    },
+                    pageCount: figma.root.children.length,
+                    pages: figma.root.children.map(function (p: PageNode) {
+                        return { id: p.id, name: p.name };
+                    }),
+                };
+                break;
+            }
+
+            case 'get_design_context': {
+                var contextDepth = (req.params && req.params.depth) || 2;
+                var ctxSel = figma.currentPage.selection;
+                if (ctxSel.length > 0) {
+                    response.data = ctxSel.map(function (node: SceneNode) {
+                        return serializeNode(node, contextDepth);
+                    });
+                } else {
+                    response.data = figma.currentPage.children.map(function (node: SceneNode) {
+                        return serializeNode(node, contextDepth);
+                    });
+                }
+                break;
+            }
+
+            case 'get_variable_defs': {
+                try {
+                    var collections = await figma.variables.getLocalVariableCollectionsAsync();
+                    var result: any[] = [];
+                    for (var ci = 0; ci < collections.length; ci++) {
+                        var col = collections[ci];
+                        var vars: any[] = [];
+                        for (var vi = 0; vi < col.variableIds.length; vi++) {
+                            var v = await figma.variables.getVariableByIdAsync(col.variableIds[vi]);
+                            if (v) {
+                                vars.push({
+                                    id: v.id, name: v.name,
+                                    resolvedType: v.resolvedType,
+                                    valuesByMode: v.valuesByMode,
+                                });
+                            }
+                        }
+                        result.push({
+                            id: col.id, name: col.name,
+                            modes: col.modes, variables: vars,
+                        });
+                    }
+                    response.data = result;
+                } catch (e) {
+                    response.data = [];
+                }
+                break;
+            }
+
+            case 'get_screenshot': {
+                var ssNodeIds = req.nodeIds || [];
+                var ssFormat = (req.params && req.params.format) || 'PNG';
+                var ssScale = (req.params && req.params.scale) || 2;
+                var screenshots: any[] = [];
+                var targetNodes: SceneNode[] = [];
+
+                if (ssNodeIds.length > 0) {
+                    for (var si = 0; si < ssNodeIds.length; si++) {
+                        var sn = figma.getNodeById(ssNodeIds[si]) as SceneNode;
+                        if (sn && 'exportAsync' in sn) targetNodes.push(sn);
+                    }
+                } else {
+                    targetNodes = figma.currentPage.selection.filter(function (n: SceneNode) {
+                        return 'exportAsync' in n;
+                    });
+                }
+
+                for (var ti = 0; ti < targetNodes.length; ti++) {
+                    var tn = targetNodes[ti];
+                    var exportSettings: ExportSettings = ssFormat === 'SVG'
+                        ? { format: 'SVG' }
+                        : { format: ssFormat as 'PNG' | 'JPG' | 'PDF', constraint: { type: 'SCALE', value: ssScale } };
+                    var imgBytes = await (tn as ExportMixin).exportAsync(exportSettings);
+                    screenshots.push({
+                        nodeId: tn.id,
+                        name: tn.name,
+                        format: ssFormat,
+                        data: Array.from(imgBytes),
+                    });
+                }
+                response.data = screenshots;
+                break;
+            }
+
+            default:
+                response.error = 'Unknown MCP request type: ' + req.type;
+        }
+    } catch (err) {
+        response.error = err instanceof Error ? err.message : String(err);
+    }
+
+    postToUI({ type: 'mcp-response', payload: response });
 }

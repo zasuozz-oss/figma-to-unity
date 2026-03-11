@@ -226,7 +226,8 @@ export type UIToMainMessage =
     | { type: 'export-single-png'; nodeId: string; scale: ExportScale }
     | { type: 'toggle-lock'; nodeId: string; locked: boolean }
     | { type: 'reload' }
-    | { type: 'cancel' };
+    | { type: 'cancel' }
+    | { type: 'mcp-request'; payload: McpServerRequest };
 
 /** Messages from main → UI. */
 export type MainToUIMessage =
@@ -239,7 +240,40 @@ export type MainToUIMessage =
     | { type: 'visibility-changed'; changes: { nodeId: string; visible: boolean }[] }
     | { type: 'lock-changed'; changes: { nodeId: string; locked: boolean }[] }
     | { type: 'single-png-ready'; nodeId: string; data: number[] }
-    | { type: 'highlight-tree-element'; nodeId: string };
+    | { type: 'highlight-tree-element'; nodeId: string }
+    | { type: 'mcp-response'; payload: McpPluginResponse };
+
+// ---------------------------------------------------------------------------
+// MCP Bridge types
+// ---------------------------------------------------------------------------
+
+export type McpRequestType =
+    | 'get_document'
+    | 'get_selection'
+    | 'get_node'
+    | 'get_styles'
+    | 'get_metadata'
+    | 'get_design_context'
+    | 'get_variable_defs'
+    | 'get_screenshot';
+
+export interface McpServerRequest {
+    type: McpRequestType;
+    requestId: string;
+    nodeIds?: string[];
+    params?: {
+        format?: 'PNG' | 'SVG' | 'JPG' | 'PDF';
+        scale?: number;
+        depth?: number;
+    };
+}
+
+export interface McpPluginResponse {
+    type: McpRequestType;
+    requestId: string;
+    data?: unknown;
+    error?: string;
+}
 
 export interface ExportedAsset {
     name: string;

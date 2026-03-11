@@ -404,6 +404,9 @@ window.onmessage = function (event) {
             downloadBlob(blob, msg.name);
             break;
         }
+        case 'mcp-response':
+            mcpSendToServer(msg.payload);
+            break;
     }
 };
 
@@ -483,6 +486,17 @@ function initTreeState(tree: any[]) {
         // or any leaf element with cornerRadius > 0
         // Elements WITH children are containers (bg, frame) — NOT 9S candidates
         var candidateTypes = ['FRAME', 'GROUP', 'RECTANGLE', 'COMPONENT', 'INSTANCE', 'VECTOR', 'ELLIPSE', 'LINE', 'STAR', 'POLYGON', 'BOOLEAN_OPERATION'];
+        // DEBUG: trace 9S detection for specific elements
+        if (el.name === 'rect_14' || el.name === 'mask' || el.name === 'rect_3' || el.name === 'rect') {
+            console.log('[9S-DEBUG] ' + el.name + ': type=' + el.figmaType
+                + ' depth=' + el.depth
+                + ' hasChildren=' + el.hasChildren
+                + ' hasGradient=' + el.hasGradient
+                + ' w=' + el.size.w + ' h=' + el.size.h
+                + ' cornerRadius=' + el.cornerRadius
+                + ' nineSliceEnabled=' + nineSliceEnabled
+                + ' inCandidateTypes=' + (candidateTypes.indexOf(el.figmaType) >= 0));
+        }
         var isCandidate = nineSliceEnabled
             && el.depth > 0
             && !el.hasChildren
@@ -1371,3 +1385,111 @@ function downloadBlob(blob: Blob, fileName: string) {
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
 }
+
+// =============================================================================
+// Minimize / Restore
+// =============================================================================
+
+var isMinimized = false;
+var savedWidth = 600;
+var savedHeight = 750;
+var minimizeBtn = document.getElementById('minimize-btn')!;
+var minimizedBar = document.getElementById('minimized-bar')!;
+
+function doMinimize() {
+    isMinimized = true;
+    document.body.classList.add('minimized');
+    parent.postMessage({ pluginMessage: { type: 'resize-ui', width: 250, height: 36 } }, '*');
+}
+function doRestore() {
+    isMinimized = false;
+    document.body.classList.remove('minimized');
+    parent.postMessage({ pluginMessage: { type: 'resize-ui', width: savedWidth, height: savedHeight } }, '*');
+}
+minimizeBtn.addEventListener('click', doMinimize);
+minimizedBar.addEventListener('click', doRestore);
+
+// =============================================================================
+// Mode Tabs — Export / MCP
+// =============================================================================
+
+document.querySelectorAll('.mode-tab').forEach(function (tab: any) {
+    tab.addEventListener('click', function () {
+        var mode = tab.getAttribute('data-mode'); // 'export' or 'mcp'
+        document.body.className = 'mode-' + mode;
+        document.querySelectorAll('.mode-tab').forEach(function (t: any) { t.classList.remove('active'); });
+        tab.classList.add('active');
+    });
+});
+
+// =============================================================================
+// MCP Bridge — WebSocket Client
+// =============================================================================
+
+var mcpSocket: WebSocket | null = null;
+var mcpReconnectTimer: number | null = null;
+var mcpIconEl = document.getElementById('mcp-icon')!;
+
+function mcpSetState(state: 'connected' | 'disconnected' | 'reconnecting') {
+    mcpIconEl.className = 'mcp-icon ' + state;
+    var labels: Record<string, string> = {
+        connected: 'MCP Bridge: Connected',
+        disconnected: 'MCP Bridge: Disconnected',
+        reconnecting: 'MCP Bridge: Reconnecting...',
+    };
+    mcpIconEl.title = labels[state] || '';
+
+    // Sync MCP panel
+    var panelIcon = document.getElementById('mcp-panel-icon');
+    var panelStatus = document.getElementById('mcp-panel-status');
+    if (panelIcon) panelIcon.className = 'mcp-panel-icon ' + state;
+    if (panelStatus) panelStatus.textContent = labels[state] || '';
+
+    // Sync minimized bar
+    var miniDot = document.getElementById('mini-dot');
+    var miniLabel = document.getElementById('mini-label');
+    var shortLabels: Record<string, string> = {
+        connected: 'MCP: Connected',
+        disconnected: 'MCP: Disconnected',
+        reconnecting: 'MCP: Reconnecting...',
+    };
+    if (miniDot) miniDot.className = 'mini-dot ' + state;
+    if (miniLabel) miniLabel.textContent = shortLabels[state] || '';
+}
+
+function mcpConnect() {
+    if (mcpSocket) mcpSocket.close();
+    mcpSetState('reconnecting');
+
+    var ws = new WebSocket('ws://localhost:1994/ws');
+    mcpSocket = ws;
+
+    ws.onopen = function () { mcpSetState('connected'); };
+    ws.onclose = function () {
+        mcpSetState('disconnected');
+        if (mcpReconnectTimer === null) {
+            mcpReconnectTimer = window.setTimeout(function () {
+                mcpReconnectTimer = null;
+                mcpConnect();
+            }, 3000);
+        }
+    };
+    ws.onerror = function () { /* onclose will fire */ };
+    ws.onmessage = function (event) {
+        try {
+            var payload = JSON.parse(event.data);
+            parent.postMessage({ pluginMessage: { type: 'mcp-request', payload: payload } }, '*');
+        } catch (e) {
+            console.error('[MCP] Invalid message from server');
+        }
+    };
+}
+
+function mcpSendToServer(payload: any) {
+    if (mcpSocket && mcpSocket.readyState === WebSocket.OPEN) {
+        mcpSocket.send(JSON.stringify(payload));
+    }
+}
+
+// Start MCP connection
+mcpConnect();

@@ -679,10 +679,271 @@
       border-top: 1px solid var(--figma-color-border, #444);
       margin: 4px 0;
     }
+
+    /* MCP Status Icon */
+    .mcp-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+    }
+
+    .mcp-icon .mcp-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      transition: all 0.3s;
+    }
+
+    .mcp-icon.connected .mcp-dot {
+      background: #10b981;
+      box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+    }
+
+    .mcp-icon.disconnected .mcp-dot {
+      background: #ef4444;
+      box-shadow: 0 0 4px rgba(239, 68, 68, 0.4);
+    }
+
+    .mcp-icon.reconnecting .mcp-dot {
+      background: #f59e0b;
+      box-shadow: 0 0 4px rgba(245, 158, 11, 0.4);
+      animation: mcp-blink 1s infinite;
+    }
+
+    @keyframes mcp-blink {
+      50% {
+        opacity: 0.3;
+      }
+    }
+
+    /* ── Mode Tab Bar ── */
+    .mode-tabs {
+      display: flex;
+      border-bottom: 1px solid #444;
+      flex-shrink: 0;
+    }
+
+    .mode-tab {
+      flex: 1;
+      padding: 6px 0;
+      text-align: center;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      background: transparent;
+      border: none;
+      color: #888;
+      transition: all 0.2s;
+      position: relative;
+    }
+
+    .mode-tab:hover {
+      color: #bbb;
+    }
+
+    .mode-tab.active {
+      color: #fff;
+    }
+
+    .mode-tab.active::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 20%;
+      width: 60%;
+      height: 2px;
+      background: #4CAF50;
+      border-radius: 1px;
+    }
+
+    /* ── Mode: MCP ── hide export UI */
+    body.mode-mcp .options-bar,
+    body.mode-mcp .bottom-bar,
+    body.mode-mcp .size-btns,
+    body.mode-mcp .sel-info,
+    body.mode-mcp .no-selection,
+    body.mode-mcp .content {
+      display: none !important;
+    }
+
+    body.mode-mcp .mcp-panel {
+      display: flex !important;
+    }
+
+    /* ── Mode: Export ── hide MCP panel */
+    body.mode-export .mcp-panel {
+      display: none !important;
+    }
+
+    /* MCP Panel */
+    .mcp-panel {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 24px;
+      text-align: center;
+      flex: 1;
+      gap: 16px;
+    }
+
+    .mcp-panel-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.3s;
+    }
+
+    .mcp-panel-icon svg {
+      width: 28px;
+      height: 28px;
+    }
+
+    .mcp-panel-icon.connected {
+      background: rgba(16, 185, 129, 0.15);
+      color: #10b981;
+    }
+
+    .mcp-panel-icon.disconnected {
+      background: rgba(239, 68, 68, 0.15);
+      color: #ef4444;
+    }
+
+    .mcp-panel-icon.reconnecting {
+      background: rgba(245, 158, 11, 0.15);
+      color: #f59e0b;
+    }
+
+    .mcp-panel-status {
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .mcp-panel-detail {
+      font-size: 11px;
+      color: #888;
+      line-height: 1.6;
+    }
+
+    .mcp-panel-detail code {
+      background: rgba(255, 255, 255, 0.08);
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 10px;
+      color: #aaa;
+    }
+
+    .mcp-panel-divider {
+      width: 40px;
+      height: 1px;
+      background: #444;
+      margin: 4px 0;
+    }
+
+    .mcp-panel-hint {
+      font-size: 11px;
+      color: #666;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* ── Minimize ── */
+    .minimize-btn {
+      background: none;
+      border: none;
+      color: #888;
+      cursor: pointer;
+      font-size: 14px;
+      padding: 2px 6px;
+      line-height: 1;
+      border-radius: 3px;
+      transition: all 0.15s;
+    }
+
+    .minimize-btn:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    /* Minimized compact bar */
+    .minimized-bar {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .minimized-bar:hover {
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .minimized-bar .mini-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      transition: all 0.3s;
+    }
+
+    .minimized-bar .mini-dot.connected {
+      background: #10b981;
+      box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+    }
+
+    .minimized-bar .mini-dot.disconnected {
+      background: #ef4444;
+      box-shadow: 0 0 4px rgba(239, 68, 68, 0.4);
+    }
+
+    .minimized-bar .mini-dot.reconnecting {
+      background: #f59e0b;
+      animation: mcp-blink 1s infinite;
+    }
+
+    .minimized-bar .mini-label {
+      font-size: 11px;
+      color: #ccc;
+      font-weight: 500;
+    }
+
+    .minimized-bar .mini-hint {
+      font-size: 10px;
+      color: #666;
+      margin-left: auto;
+    }
+
+    /* Minimized state */
+    body.minimized .minimized-bar {
+      display: flex;
+    }
+
+    body.minimized .header,
+    body.minimized .mode-tabs,
+    body.minimized .options-bar,
+    body.minimized .no-selection,
+    body.minimized .mcp-panel,
+    body.minimized .content,
+    body.minimized .progress-area,
+    body.minimized .error-msg,
+    body.minimized .log-area,
+    body.minimized .bottom-bar {
+      display: none !important;
+    }
   </style>
 </head>
 
-<body>
+<body class="mode-export">
   <!-- Context menu -->
   <div id="ctx-menu" class="ctx-menu">
     <div class="ctx-menu-item" id="ctx-rename">✏️ Rename</div>
@@ -692,9 +953,19 @@
     <div class="ctx-menu-item" id="ctx-export">📦 Export This Element</div>
   </div>
 
+  <!-- Minimized bar (visible only when minimized) -->
+  <div class="minimized-bar" id="minimized-bar">
+    <span class="mini-dot disconnected" id="mini-dot"></span>
+    <span class="mini-label" id="mini-label">MCP: Disconnected</span>
+    <span class="mini-hint">click to expand</span>
+  </div>
+
   <!-- Header -->
   <div class="header">
     <span class="logo">🎨</span>
+    <div id="mcp-icon" class="mcp-icon disconnected" title="MCP Bridge: Disconnected">
+      <span class="mcp-dot"></span>
+    </div>
     <h2>Figma → Unity <span id="version-label" style="font-size:10px;font-weight:normal;color:#888;opacity:0.7;"></span>
     </h2>
     <div class="size-btns">
@@ -703,6 +974,13 @@
       <button class="size-btn" data-size="l">L</button>
     </div>
     <span id="sel-info" class="sel-info"></span>
+    <button id="minimize-btn" class="minimize-btn" title="Minimize">▬</button>
+  </div>
+
+  <!-- Mode tabs -->
+  <div class="mode-tabs">
+    <button class="mode-tab active" data-mode="export">📦 Export</button>
+    <button class="mode-tab" data-mode="mcp">☁️ MCP</button>
   </div>
 
   <!-- Options bar -->
@@ -751,6 +1029,22 @@
   <div id="no-selection" class="no-selection">
     <div class="icon">📐</div>
     <div>Select a Frame to export</div>
+  </div>
+
+  <!-- MCP Panel (shown when no frame is selected) -->
+  <div id="mcp-panel" class="mcp-panel">
+    <div id="mcp-panel-icon" class="mcp-panel-icon disconnected">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M19 15a4 4 0 0 0-3.7-4A6 6 0 0 0 4 13a5 5 0 0 0 0 10h14a4 4 0 0 0 1-8Z" stroke="currentColor"
+          stroke-width="1.5" stroke-linejoin="round" fill="none" />
+      </svg>
+    </div>
+    <div id="mcp-panel-status" class="mcp-panel-status">MCP Bridge: Disconnected</div>
+    <div id="mcp-panel-detail" class="mcp-panel-detail">
+      Server: <code>ws://localhost:1994</code>
+    </div>
+    <div class="mcp-panel-divider"></div>
+    <div class="mcp-panel-hint">📐 Select a Frame to start exporting</div>
   </div>
 
   <!-- Main content: tree + preview -->
