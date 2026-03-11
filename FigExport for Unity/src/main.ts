@@ -12,7 +12,7 @@ import { DEFAULT_EXPORT_OPTIONS, DEFAULT_EXPORT_SCALE } from './types';
 import { traverseNode } from './traverser';
 
 // Show the plugin UI
-figma.showUI(__html__, { width: 480, height: 600, themeColors: true });
+figma.showUI(__html__, { width: 600, height: 750, themeColors: true });
 
 // Flag to suppress selectionchange when we programmatically select a node
 var suppressSelectionChange = false;

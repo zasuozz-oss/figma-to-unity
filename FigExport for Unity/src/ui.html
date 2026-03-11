@@ -181,10 +181,13 @@
       padding: 4px 6px;
       border-bottom: 1px solid #444;
       flex-shrink: 0;
+      display: flex;
+      gap: 4px;
+      align-items: center;
     }
 
     .tree-search input {
-      width: 100%;
+      flex: 1;
       box-sizing: border-box;
       padding: 4px 6px;
       border: 1px solid #555;
@@ -193,6 +196,25 @@
       color: #ddd;
       font-size: 11px;
       outline: none;
+    }
+
+    .tree-filter-btn {
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 9px;
+      font-weight: 700;
+      cursor: pointer;
+      border: 1px solid var(--figma-color-border, #555);
+      background: none;
+      color: var(--figma-color-text-secondary, #999);
+      flex-shrink: 0;
+      transition: all 0.15s;
+    }
+
+    .tree-filter-btn.active {
+      background: #27ae60;
+      border-color: #27ae60;
+      color: white;
     }
 
     .tree-search input:focus {
@@ -735,6 +757,7 @@
     <div class="tree-panel-wrapper">
       <div class="tree-search">
         <input type="text" id="tree-search-input" placeholder="🔍 Search elements..." />
+        <button id="filter-9s-btn" class="tree-filter-btn" title="Filter: show only 9-Slice candidates">9S</button>
       </div>
       <div id="tree-panel" class="tree-panel"></div>
     </div>

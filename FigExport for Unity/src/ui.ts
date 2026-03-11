@@ -58,6 +58,7 @@ var logEl = document.getElementById('log')!;
 
 // Search filter
 var treeSearchTerm = '';
+var filter9sActive = false;
 treeSearchInput.addEventListener('input', function () {
     treeSearchTerm = treeSearchInput.value.trim().toLowerCase();
     renderTree();
@@ -102,6 +103,15 @@ nineSliceToggleBtn.addEventListener('click', function () {
     toggleGlobalNineSlice();
 });
 
+// 9S filter button in search bar
+var filter9sBtn = document.getElementById('filter-9s-btn')!;
+filter9sBtn.addEventListener('click', function () {
+    filter9sActive = !filter9sActive;
+    if (filter9sActive) filter9sBtn.classList.add('active');
+    else filter9sBtn.classList.remove('active');
+    renderTree();
+});
+
 // Reload button
 var reloadBtn = document.getElementById('reload-btn')!;
 reloadBtn.addEventListener('click', function () {
@@ -125,9 +135,9 @@ undoRenameBtn.addEventListener('click', function () {
 
 // Size buttons: S / M / L
 var SIZE_PRESETS: Record<string, { w: number; h: number }> = {
-    's': { w: 380, h: 500 },
-    'm': { w: 480, h: 600 },
-    'l': { w: 640, h: 750 },
+    's': { w: 480, h: 600 },
+    'm': { w: 600, h: 750 },
+    'l': { w: 800, h: 900 },
 };
 document.querySelectorAll('.size-btn').forEach(function (btn) {
     btn.addEventListener('click', function () {
@@ -947,11 +957,14 @@ function renderTree() {
         var state = treeState[i];
         if (!state) continue;
 
-        // Skip if hidden by collapsed parent (but not when searching)
-        if (!treeSearchTerm && i > 0 && isHiddenByCollapse(i)) continue;
+        // Skip if hidden by collapsed parent (but not when searching or filtering)
+        if (!treeSearchTerm && !filter9sActive && i > 0 && isHiddenByCollapse(i)) continue;
 
         // Search filter — skip if name doesn't match search term
         if (treeSearchTerm && el.name.toLowerCase().indexOf(treeSearchTerm) < 0) continue;
+
+        // 9S filter — only show elements with cornerRadius > 0 (potential 9-slice candidates)
+        if (filter9sActive && !(el.cornerRadius > 0)) continue;
 
         var isMergedChild = mergedChildIds.has(el.id);
         var isSelected = selectedNodeId === el.id;
