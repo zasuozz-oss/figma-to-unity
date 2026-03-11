@@ -76,12 +76,16 @@ function sendSelectionInfo(): void {
         // Check locked status from Figma node
         var figmaNode = figma.getNodeById(el.id) as SceneNode | null;
         var isLocked = figmaNode && 'locked' in figmaNode ? (figmaNode as any).locked : false;
-        // Check if element has gradient fills
+        // Check if element has gradient or image fills (not suitable for 9-slice)
         var hasGradient = false;
-        if (Array.isArray(el.fills)) {
-            for (var f = 0; f < el.fills.length; f++) {
-                var fillType = (el.fills[f] as any).type;
-                if (fillType && fillType.indexOf('GRADIENT') === 0) {
+        var fills = el.fills;
+        // figma.mixed is a symbol, not an array — treat as complex fill
+        if (typeof fills === 'symbol') {
+            hasGradient = true;
+        } else if (Array.isArray(fills)) {
+            for (var f = 0; f < fills.length; f++) {
+                var fillType = (fills[f] as any).type;
+                if (fillType && (fillType.indexOf('GRADIENT') === 0 || fillType === 'IMAGE')) {
                     hasGradient = true;
                     break;
                 }

@@ -475,6 +475,7 @@ function initTreeState(tree: any[]) {
         // or any element with cornerRadius > 0
         var containerTypes = ['FRAME', 'GROUP', 'RECTANGLE', 'COMPONENT', 'INSTANCE'];
         var isCandidate = nineSliceEnabled
+            && el.depth > 0
             && !el.hasGradient
             && el.size.w > 64 && el.size.h > 64
             && (containerTypes.indexOf(el.figmaType) >= 0 || el.cornerRadius > 0);
@@ -790,7 +791,8 @@ function reDetectNineSlice() {
     var containerTypes = ['FRAME', 'GROUP', 'RECTANGLE', 'COMPONENT', 'INSTANCE'];
     for (var i = 0; i < currentTree.length; i++) {
         var el = currentTree[i];
-        var isCandidate = !el.hasGradient
+        var isCandidate = el.depth > 0
+            && !el.hasGradient
             && el.size.w > 64 && el.size.h > 64
             && (containerTypes.indexOf(el.figmaType) >= 0 || el.cornerRadius > 0);
         treeState[i].nineSlice = isCandidate;
