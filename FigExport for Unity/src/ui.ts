@@ -956,18 +956,15 @@ function renderTree() {
         var state = treeState[i];
         if (!state) continue;
 
-        // Skip if hidden by collapsed parent (but not when searching or filtering)
-        if (!treeSearchTerm && !filter9sActive && i > 0 && isHiddenByCollapse(i)) continue;
+        // Skip if hidden by collapsed parent (but not when searching)
+        // During 9S filter, still respect collapse so expand/collapse works
+        if (!treeSearchTerm && i > 0 && isHiddenByCollapse(i)) continue;
 
         // Search filter — skip if name doesn't match search term
         if (treeSearchTerm && el.name.toLowerCase().indexOf(treeSearchTerm) < 0) continue;
 
-        // 9S filter — only show elements that are 9-slice candidates
-        if (filter9sActive) {
-            var is9sCandidate = el.size.w > 64 && el.size.h > 64
-                && (['FRAME', 'RECTANGLE', 'COMPONENT', 'INSTANCE'].indexOf(el.figmaType) >= 0 || el.cornerRadius > 0);
-            if (!is9sCandidate) continue;
-        }
+        // 9S filter — only show elements that currently have 9-slice active
+        if (filter9sActive && !state.nineSlice) continue;
 
         var isMergedChild = mergedChildIds.has(el.id);
         var isSelected = selectedNodeId === el.id;
@@ -1030,14 +1027,20 @@ function renderTree() {
             html += '</button>';
         }
 
-        // 9S button for non-TEXT elements that have cornerRadius > 0 or already marked as 9-slice
-        if (el.figmaType !== 'TEXT' && (el.cornerRadius > 0 || state.nineSlice)) {
-            var nsClass = 'tree-9s-btn';
-            if (state.nineSlice) nsClass += ' active';
-            if (state.nineSliceAutoDetected && state.nineSlice) nsClass += ' auto';
-            html += '<button class="' + nsClass + '" data-9s-id="' + el.id + '" title="9-Slice: export @1x + apply border">';
-            html += '9S';
-            html += '</button>';
+        // 9S button for non-TEXT elements that are candidates (container types > 64px or cornerRadius > 0 or already active)
+        if (el.figmaType !== 'TEXT') {
+            var isNsCandidate = (el.size.w > 64 && el.size.h > 64
+                && ['FRAME', 'RECTANGLE', 'COMPONENT', 'INSTANCE'].indexOf(el.figmaType) >= 0)
+                || el.cornerRadius > 0
+                || state.nineSlice;
+            if (isNsCandidate) {
+                var nsClass = 'tree-9s-btn';
+                if (state.nineSlice) nsClass += ' active';
+                if (state.nineSliceAutoDetected && state.nineSlice) nsClass += ' auto';
+                html += '<button class="' + nsClass + '" data-9s-id="' + el.id + '" title="9-Slice: export @1x + apply border">';
+                html += '9S';
+                html += '</button>';
+            }
         }
 
         // Merge button
