@@ -479,10 +479,10 @@ function initTreeState(tree: any[]) {
         var defaultCollapsed = el.hasChildren && el.depth > 0;
 
         // Auto-detect 9-slice candidates (only when global 9S is enabled):
-        // Leaf elements (no children) that are container types with size > 64px
+        // Leaf elements (no children) that are shape/container types with size > 64px
         // or any leaf element with cornerRadius > 0
         // Elements WITH children are containers (bg, frame) — NOT 9S candidates
-        var candidateTypes = ['RECTANGLE', 'COMPONENT', 'INSTANCE'];
+        var candidateTypes = ['FRAME', 'GROUP', 'RECTANGLE', 'COMPONENT', 'INSTANCE'];
         var isCandidate = nineSliceEnabled
             && el.depth > 0
             && !el.hasChildren
@@ -799,7 +799,7 @@ function toggleGlobalNineSlice() {
 
 function reDetectNineSlice() {
     // Same logic as initTreeState — only leaf elements without children
-    var candidateTypes = ['RECTANGLE', 'COMPONENT', 'INSTANCE'];
+    var candidateTypes = ['FRAME', 'GROUP', 'RECTANGLE', 'COMPONENT', 'INSTANCE'];
     for (var i = 0; i < currentTree.length; i++) {
         var el = currentTree[i];
         var isCandidate = el.depth > 0
