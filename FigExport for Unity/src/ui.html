@@ -418,29 +418,7 @@
       color: white;
     }
 
-    .tree-9s-btn {
-      padding: 1px 4px;
-      border-radius: 2px;
-      font-size: 7px;
-      font-weight: 600;
-      cursor: pointer;
-      border: 1px solid var(--figma-color-border, #555);
-      background: none;
-      color: var(--figma-color-text-secondary, #999);
-      flex-shrink: 0;
-      transition: all 0.1s;
-      letter-spacing: 0.3px;
-    }
 
-    .tree-9s-btn.active {
-      background: #27ae60;
-      border-color: #27ae60;
-      color: white;
-    }
-
-    .tree-9s-btn.auto {
-      border-style: dashed;
-    }
 
     .tool-toggle-btn {
       padding: 2px 8px;
@@ -1008,8 +986,6 @@
     <div class="opt-row">
       <span class="opt-label">Tools</span>
       <div style="display:flex;gap:4px;flex:1;align-items:center;">
-        <button id="nine-slice-toggle" class="tool-toggle-btn active"
-          title="Enable/Disable 9-Slice (default: ON)">9S</button>
       </div>
       <button id="reload-btn" class="preview-lock-btn" title="Reload plugin (re-scan selection)">🔃</button>
 
@@ -1052,7 +1028,6 @@
     <div class="tree-panel-wrapper">
       <div class="tree-search">
         <input type="text" id="tree-search-input" placeholder="🔍 Search elements..." />
-        <button id="filter-9s-btn" class="tree-filter-btn" title="Filter: show only 9-Slice candidates">9S</button>
       </div>
       <div id="tree-panel" class="tree-panel"></div>
     </div>

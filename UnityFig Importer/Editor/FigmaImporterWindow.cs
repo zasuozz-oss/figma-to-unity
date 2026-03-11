@@ -643,7 +643,6 @@ namespace FigmaImporter
             if (_showBuildOptions)
             {
                 _buildOptions.ImportTextures = EditorGUILayout.Toggle("Import textures as Sprite", _buildOptions.ImportTextures);
-                _buildOptions.ApplyNineSlice = EditorGUILayout.Toggle("Apply 9-slice (corner radius)", _buildOptions.ApplyNineSlice);
                 _buildOptions.DisableRaycastTarget = EditorGUILayout.Toggle("Disable raycastTarget (non-interactive)", _buildOptions.DisableRaycastTarget);
                 _buildOptions.ScaleToUnityResolution = EditorGUILayout.Toggle("Scale to Unity resolution", _buildOptions.ScaleToUnityResolution);
             }
@@ -922,7 +921,6 @@ namespace FigmaImporter
                         _exportFolderPath,
                         targetFolder,
                         _manifest,
-                        _buildOptions.ApplyNineSlice,
                         _textureSettings,
                         (current, total, label) =>
                         {

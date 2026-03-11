@@ -117,10 +117,7 @@ export interface Screen {
     exportScale: number;
 }
 
-export interface NineSliceData {
-    border: [number, number, number, number]; // left, bottom, right, top (Unity spriteBorder order)
-    exportScale: number; // always 1 for 9-slice exports
-}
+
 
 export interface ElementData {
     id: string;
@@ -137,7 +134,7 @@ export interface ElementData {
     children: string[];
     merged?: boolean; // true if this element was merged (flattened with children)
     autoLayout?: AutoLayoutProps;
-    nineSlice?: NineSliceData; // present when element uses 9-slice export
+
 }
 
 export interface AssetEntry {
@@ -205,8 +202,7 @@ export interface ElementConfig {
     excluded: boolean;   // true = skip entirely
     merge: boolean;      // true = flatten parent+children into one PNG
     exportAsPng: boolean; // true = export TEXT as rasterized PNG instead of TMP data
-    nineSlice: boolean;  // true = export @1x + apply 9-slice border
-    nineSliceAutoDetected: boolean; // true = auto-detected, false = manual override
+
 }
 
 // ---------------------------------------------------------------------------

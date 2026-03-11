@@ -25,8 +25,7 @@ interface TreeNodeState {
     excluded: boolean;
     merge: boolean;
     exportAsPng: boolean;
-    nineSlice: boolean;
-    nineSliceAutoDetected: boolean;
+
     collapsed: boolean;
     hasChildren: boolean;
     parentId: string | null;
@@ -40,7 +39,7 @@ var filters = { images: true, icons: true, containers: true };
 var previewLocked = true;
 var rootNodeId: string | null = null;
 var originalNames: { nodeId: string; name: string }[] = [];
-var nineSliceEnabled = true;
+
 
 // parent-children map for collapse
 var childrenOf = new Map<string, string[]>();
@@ -66,7 +65,7 @@ var logEl = document.getElementById('log')!;
 
 // Search filter
 var treeSearchTerm = '';
-var filter9sActive = false;
+
 treeSearchInput.addEventListener('input', function () {
     treeSearchTerm = treeSearchInput.value.trim().toLowerCase();
     renderTree();
@@ -105,20 +104,7 @@ previewLockBtn.addEventListener('click', function () {
     }
 });
 
-// 9-Slice global toggle (also triggers re-detect)
-var nineSliceToggleBtn = document.getElementById('nine-slice-toggle')!;
-nineSliceToggleBtn.addEventListener('click', function () {
-    toggleGlobalNineSlice();
-});
 
-// 9S filter button in search bar
-var filter9sBtn = document.getElementById('filter-9s-btn')!;
-filter9sBtn.addEventListener('click', function () {
-    filter9sActive = !filter9sActive;
-    if (filter9sActive) filter9sBtn.classList.add('active');
-    else filter9sBtn.classList.remove('active');
-    renderTree();
-});
 
 // Reload button
 var reloadBtn = document.getElementById('reload-btn')!;
@@ -193,7 +179,7 @@ exportBtnEl.addEventListener('click', function () {
     logEl.textContent = '';
 
     var configs = treeState.map(function (s) {
-        return { id: s.id, excluded: s.excluded, merge: s.merge, exportAsPng: s.exportAsPng, nineSlice: s.nineSlice, nineSliceAutoDetected: s.nineSliceAutoDetected };
+        return { id: s.id, excluded: s.excluded, merge: s.merge, exportAsPng: s.exportAsPng };
     });
 
     parent.postMessage({
@@ -469,6 +455,7 @@ function appendLog(line: string) {
 function initTreeState(tree: any[]) {
     var parentStack: string[] = [];
     treeState = [];
+
     childrenOf = new Map();
 
     for (var i = 0; i < tree.length; i++) {
@@ -481,36 +468,11 @@ function initTreeState(tree: any[]) {
         // Root (depth 0) expanded, all other containers collapsed by default
         var defaultCollapsed = el.hasChildren && el.depth > 0;
 
-        // Auto-detect 9-slice candidates (only when global 9S is enabled):
-        // Leaf elements (no children) that are shape types with size > 32px
-        // or any leaf element with cornerRadius > 0
-        // Elements WITH children are containers (bg, frame) — NOT 9S candidates
-        var candidateTypes = ['FRAME', 'GROUP', 'RECTANGLE', 'COMPONENT', 'INSTANCE', 'VECTOR', 'ELLIPSE', 'LINE', 'STAR', 'POLYGON', 'BOOLEAN_OPERATION'];
-        // DEBUG: trace 9S detection for specific elements
-        if (el.name === 'rect_14' || el.name === 'mask' || el.name === 'rect_3' || el.name === 'rect') {
-            console.log('[9S-DEBUG] ' + el.name + ': type=' + el.figmaType
-                + ' depth=' + el.depth
-                + ' hasChildren=' + el.hasChildren
-                + ' hasGradient=' + el.hasGradient
-                + ' w=' + el.size.w + ' h=' + el.size.h
-                + ' cornerRadius=' + el.cornerRadius
-                + ' nineSliceEnabled=' + nineSliceEnabled
-                + ' inCandidateTypes=' + (candidateTypes.indexOf(el.figmaType) >= 0));
-        }
-        var isCandidate = nineSliceEnabled
-            && el.depth > 0
-            && !el.hasChildren
-            && !el.hasGradient
-            && el.size.w > 32 && el.size.h > 32
-            && (candidateTypes.indexOf(el.figmaType) >= 0 || el.cornerRadius > 0);
-
         treeState.push({
             id: el.id,
             excluded: !el.visible, // Auto-exclude hidden elements
             merge: !!el.locked,
             exportAsPng: false,
-            nineSlice: isCandidate,
-            nineSliceAutoDetected: isCandidate,
             collapsed: defaultCollapsed,
             hasChildren: el.hasChildren,
             parentId: parentId,
@@ -605,7 +567,7 @@ function resetAll() {
         }
         treeState[i].excluded = false;
         treeState[i].merge = false;
-        treeState[i].nineSlice = treeState[i].nineSliceAutoDetected;
+
         if (i > 0) treeState[i].collapsed = true;
     }
     updateMergedChildren();
@@ -781,51 +743,7 @@ function toggleExportAsPng(id: string) {
     renderTree();
 }
 
-function toggleNineSlice(id: string) {
-    for (var i = 0; i < treeState.length; i++) {
-        if (treeState[i].id === id) {
-            treeState[i].nineSlice = !treeState[i].nineSlice;
-            break;
-        }
-    }
-    renderTree();
-}
 
-function toggleGlobalNineSlice() {
-    nineSliceEnabled = !nineSliceEnabled;
-    var toggleBtn = document.getElementById('nine-slice-toggle');
-    if (toggleBtn) {
-        if (nineSliceEnabled) toggleBtn.classList.add('active');
-        else toggleBtn.classList.remove('active');
-    }
-    // When toggling off: clear all 9-slice flags
-    // When toggling on: re-run auto-detect
-    if (!nineSliceEnabled) {
-        for (var i = 0; i < treeState.length; i++) {
-            treeState[i].nineSlice = false;
-            treeState[i].nineSliceAutoDetected = false;
-        }
-    } else {
-        reDetectNineSlice();
-    }
-    renderTree();
-}
-
-function reDetectNineSlice() {
-    // Same logic as initTreeState — only leaf elements without children
-    var candidateTypes = ['FRAME', 'GROUP', 'RECTANGLE', 'COMPONENT', 'INSTANCE', 'VECTOR', 'ELLIPSE', 'LINE', 'STAR', 'POLYGON', 'BOOLEAN_OPERATION'];
-    for (var i = 0; i < currentTree.length; i++) {
-        var el = currentTree[i];
-        var isCandidate = el.depth > 0
-            && !el.hasChildren
-            && !el.hasGradient
-            && el.size.w > 32 && el.size.h > 32
-            && (candidateTypes.indexOf(el.figmaType) >= 0 || el.cornerRadius > 0);
-        treeState[i].nineSlice = isCandidate;
-        treeState[i].nineSliceAutoDetected = isCandidate;
-    }
-    renderTree();
-}
 
 function selectElement(id: string) {
     selectedNodeId = id;
@@ -987,20 +905,10 @@ function renderTree() {
         if (!state) continue;
 
         // Skip if hidden by collapsed parent (but not when searching)
-        // During 9S filter, still respect collapse so expand/collapse works
         if (!treeSearchTerm && i > 0 && isHiddenByCollapse(i)) continue;
 
         // Search filter — skip if name doesn't match search term
         if (treeSearchTerm && el.name.toLowerCase().indexOf(treeSearchTerm) < 0) continue;
-
-        // 9S filter — show visible (not excluded) elements that are 9-slice candidates
-        if (filter9sActive) {
-            var is9sCandidate = !state.excluded
-                && !el.hasGradient
-                && el.size.w > 32 && el.size.h > 32
-                && (['FRAME', 'GROUP', 'RECTANGLE', 'COMPONENT', 'INSTANCE', 'VECTOR', 'ELLIPSE', 'LINE', 'STAR', 'POLYGON', 'BOOLEAN_OPERATION'].indexOf(el.figmaType) >= 0 || el.cornerRadius > 0);
-            if (!is9sCandidate) continue;
-        }
 
         var isMergedChild = mergedChildIds.has(el.id);
         var isSelected = selectedNodeId === el.id;
@@ -1063,22 +971,7 @@ function renderTree() {
             html += '</button>';
         }
 
-        // 9S button for non-TEXT elements that are candidates (container types > 64px or cornerRadius > 0 or already active)
-        if (el.figmaType !== 'TEXT') {
-            var isNsCandidate = !el.hasGradient
-                && ((el.size.w > 32 && el.size.h > 32
-                    && ['FRAME', 'GROUP', 'RECTANGLE', 'COMPONENT', 'INSTANCE', 'VECTOR', 'ELLIPSE', 'LINE', 'STAR', 'POLYGON', 'BOOLEAN_OPERATION'].indexOf(el.figmaType) >= 0)
-                    || el.cornerRadius > 0)
-                || state.nineSlice;
-            if (isNsCandidate) {
-                var nsClass = 'tree-9s-btn';
-                if (state.nineSlice) nsClass += ' active';
-                if (state.nineSliceAutoDetected && state.nineSlice) nsClass += ' auto';
-                html += '<button class="' + nsClass + '" data-9s-id="' + el.id + '" title="9-Slice: export @1x + apply border">';
-                html += '9S';
-                html += '</button>';
-            }
-        }
+
 
         // Merge button
         var mergeClass = 'tree-merge-btn';
@@ -1121,12 +1014,7 @@ function renderTree() {
         });
     });
 
-    treePanelEl.querySelectorAll('[data-9s-id]').forEach(function (btn) {
-        btn.addEventListener('click', function (e) {
-            e.stopPropagation();
-            toggleNineSlice((this as HTMLElement).getAttribute('data-9s-id')!);
-        });
-    });
+
 
     treePanelEl.querySelectorAll('[data-click-id]').forEach(function (nameEl) {
         nameEl.addEventListener('click', function (e) {

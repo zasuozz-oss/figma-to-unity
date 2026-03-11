@@ -84,6 +84,7 @@ function sendSelectionInfo(): void {
             hasGradient = true;
         } else if (Array.isArray(fills)) {
             for (var f = 0; f < fills.length; f++) {
+                if ((fills[f] as any).visible === false) continue; // Skip hidden fills
                 var fillType = (fills[f] as any).type;
                 if (fillType && (fillType.indexOf('GRADIENT') === 0 || fillType === 'IMAGE')) {
                     hasGradient = true;
