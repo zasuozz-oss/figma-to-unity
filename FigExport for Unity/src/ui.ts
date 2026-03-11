@@ -32,6 +32,7 @@ var filters = { images: true, icons: true, containers: true };
 var previewLocked = true;
 var rootNodeId: string | null = null;
 var originalNames: { nodeId: string; name: string }[] = [];
+var nineSliceEnabled = true;
 
 // parent-children map for collapse
 var childrenOf = new Map<string, string[]>();
@@ -93,6 +94,18 @@ previewLockBtn.addEventListener('click', function () {
     if (previewLocked) {
         requestPreviewRefresh();
     }
+});
+
+// 9-Slice global toggle
+var nineSliceToggleBtn = document.getElementById('nine-slice-toggle')!;
+nineSliceToggleBtn.addEventListener('click', function () {
+    toggleGlobalNineSlice();
+});
+
+// 9-Slice re-detect
+var nineSliceRedetectBtn = document.getElementById('nine-slice-redetect')!;
+nineSliceRedetectBtn.addEventListener('click', function () {
+    reDetectNineSlice();
 });
 
 // Reload button
@@ -747,6 +760,39 @@ function toggleNineSlice(id: string) {
     renderTree();
 }
 
+function toggleGlobalNineSlice() {
+    nineSliceEnabled = !nineSliceEnabled;
+    var toggleBtn = document.getElementById('nine-slice-toggle');
+    if (toggleBtn) {
+        if (nineSliceEnabled) toggleBtn.classList.add('active');
+        else toggleBtn.classList.remove('active');
+    }
+    // When toggling off: clear all 9-slice flags
+    // When toggling on: re-run auto-detect
+    if (!nineSliceEnabled) {
+        for (var i = 0; i < treeState.length; i++) {
+            treeState[i].nineSlice = false;
+            treeState[i].nineSliceAutoDetected = false;
+        }
+    } else {
+        reDetectNineSlice();
+    }
+    renderTree();
+}
+
+function reDetectNineSlice() {
+    var containerTypes = ['FRAME', 'RECTANGLE', 'COMPONENT', 'INSTANCE'];
+    for (var i = 0; i < currentTree.length; i++) {
+        var el = currentTree[i];
+        var isCandidate = el.cornerRadius > 0
+            && el.size.w > 64 && el.size.h > 64
+            && containerTypes.indexOf(el.figmaType) >= 0;
+        treeState[i].nineSlice = isCandidate;
+        treeState[i].nineSliceAutoDetected = isCandidate;
+    }
+    renderTree();
+}
+
 function selectElement(id: string) {
     selectedNodeId = id;
     // Auto-expand: if the element has children and is collapsed, expand it
@@ -975,8 +1021,8 @@ function renderTree() {
             html += '</button>';
         }
 
-        // 9S button for non-TEXT exportable elements
-        if (el.figmaType !== 'TEXT' && el.hasAsset) {
+        // 9S button for non-TEXT elements that have cornerRadius > 0 or already marked as 9-slice
+        if (el.figmaType !== 'TEXT' && (el.cornerRadius > 0 || state.nineSlice)) {
             var nsClass = 'tree-9s-btn';
             if (state.nineSlice) nsClass += ' active';
             if (state.nineSliceAutoDetected && state.nineSlice) nsClass += ' auto';

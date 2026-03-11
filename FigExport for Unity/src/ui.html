@@ -420,6 +420,40 @@
       border-style: dashed;
     }
 
+    .tool-toggle-btn {
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 700;
+      cursor: pointer;
+      border: 1px solid var(--figma-color-border, #555);
+      background: none;
+      color: var(--figma-color-text-secondary, #999);
+      transition: all 0.15s;
+    }
+
+    .tool-toggle-btn.active {
+      background: #27ae60;
+      border-color: #27ae60;
+      color: white;
+    }
+
+    .tool-action-btn {
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 10px;
+      cursor: pointer;
+      border: 1px solid var(--figma-color-border, #555);
+      background: none;
+      color: var(--figma-color-text-secondary, #aaa);
+      transition: all 0.15s;
+    }
+
+    .tool-action-btn:hover {
+      background: var(--figma-color-bg-hover, #333);
+      color: var(--figma-color-text, #fff);
+    }
+
     /* Preview panel (right side) — 2/3 width */
     .preview-panel {
       flex: 2;
@@ -672,7 +706,12 @@
     </div>
     <div class="opt-row">
       <span class="opt-label">Tools</span>
-      <div style="display:flex;gap:2px;flex:1;"></div>
+      <div style="display:flex;gap:4px;flex:1;align-items:center;">
+        <button id="nine-slice-toggle" class="tool-toggle-btn active"
+          title="Enable/Disable 9-Slice (default: ON)">9S</button>
+        <button id="nine-slice-redetect" class="tool-action-btn" title="Re-run auto-detect 9-Slice">&#128269;
+          Detect</button>
+      </div>
       <button id="reload-btn" class="preview-lock-btn" title="Reload plugin (re-scan selection)">🔃</button>
 
       <button id="preview-lock" class="preview-lock-btn" title="Lock canvas & preview">🔓</button>
