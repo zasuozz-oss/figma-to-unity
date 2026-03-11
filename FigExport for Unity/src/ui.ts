@@ -963,8 +963,13 @@ function renderTree() {
         // Search filter — skip if name doesn't match search term
         if (treeSearchTerm && el.name.toLowerCase().indexOf(treeSearchTerm) < 0) continue;
 
-        // 9S filter — only show elements that currently have 9-slice active
-        if (filter9sActive && !state.nineSlice) continue;
+        // 9S filter — show visible (not excluded) elements that are 9-slice candidates
+        if (filter9sActive) {
+            var is9sCandidate = !state.excluded
+                && el.size.w > 64 && el.size.h > 64
+                && (['FRAME', 'RECTANGLE', 'COMPONENT', 'INSTANCE'].indexOf(el.figmaType) >= 0 || el.cornerRadius > 0);
+            if (!is9sCandidate) continue;
+        }
 
         var isMergedChild = mergedChildIds.has(el.id);
         var isSelected = selectedNodeId === el.id;
