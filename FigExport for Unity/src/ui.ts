@@ -471,12 +471,12 @@ function initTreeState(tree: any[]) {
         var defaultCollapsed = el.hasChildren && el.depth > 0;
 
         // Auto-detect 9-slice candidates (only when global 9S is enabled):
-        // Must have cornerRadius > 0, both dimensions > 64px, and be a container type
+        // Any container type (FRAME/RECTANGLE/COMPONENT/INSTANCE) with size > 64px
+        // or any element with cornerRadius > 0
         var containerTypes = ['FRAME', 'RECTANGLE', 'COMPONENT', 'INSTANCE'];
         var isCandidate = nineSliceEnabled
-            && el.cornerRadius > 0
             && el.size.w > 64 && el.size.h > 64
-            && containerTypes.indexOf(el.figmaType) >= 0;
+            && (containerTypes.indexOf(el.figmaType) >= 0 || el.cornerRadius > 0);
 
         treeState.push({
             id: el.id,
@@ -789,9 +789,8 @@ function reDetectNineSlice() {
     var containerTypes = ['FRAME', 'RECTANGLE', 'COMPONENT', 'INSTANCE'];
     for (var i = 0; i < currentTree.length; i++) {
         var el = currentTree[i];
-        var isCandidate = el.cornerRadius > 0
-            && el.size.w > 64 && el.size.h > 64
-            && containerTypes.indexOf(el.figmaType) >= 0;
+        var isCandidate = el.size.w > 64 && el.size.h > 64
+            && (containerTypes.indexOf(el.figmaType) >= 0 || el.cornerRadius > 0);
         treeState[i].nineSlice = isCandidate;
         treeState[i].nineSliceAutoDetected = isCandidate;
     }
@@ -963,8 +962,12 @@ function renderTree() {
         // Search filter — skip if name doesn't match search term
         if (treeSearchTerm && el.name.toLowerCase().indexOf(treeSearchTerm) < 0) continue;
 
-        // 9S filter — only show elements with cornerRadius > 0 (potential 9-slice candidates)
-        if (filter9sActive && !(el.cornerRadius > 0)) continue;
+        // 9S filter — only show elements that are 9-slice candidates
+        if (filter9sActive) {
+            var is9sCandidate = el.size.w > 64 && el.size.h > 64
+                && (['FRAME', 'RECTANGLE', 'COMPONENT', 'INSTANCE'].indexOf(el.figmaType) >= 0 || el.cornerRadius > 0);
+            if (!is9sCandidate) continue;
+        }
 
         var isMergedChild = mergedChildIds.has(el.id);
         var isSelected = selectedNodeId === el.id;
@@ -1017,8 +1020,6 @@ function renderTree() {
         if (state.merge) nameText = '🔗 ' + nameText;
         html += '<span class="tree-name" data-click-id="' + el.id + '" title="' + el.name + '">' + nameText + '</span>';
 
-        // Size
-        html += '<span class="tree-size">' + Math.round(el.size.w) + '×' + Math.round(el.size.h) + '</span>';
 
         // PNG button for TEXT elements (next to merge button area)
         if (el.figmaType === 'TEXT') {
