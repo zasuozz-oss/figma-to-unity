@@ -1,5 +1,5 @@
 {
-  "name": "@gethopp/figma-mcp-bridge",
+  "name": "figma-mcp-bridge",
   "version": "0.1.1",
   "description": "MCP server that bridges Figma plugin data to AI tools without hitting API rate limits",
   "type": "module",
@@ -23,12 +23,16 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/gethopp/figma-mcp-bridge.git",
-    "directory": "server"
+    "url": "git+https://github.com/zasuozz-oss/figma-to-unity.git",
+    "directory": "FigExport for Unity/server"
   },
-  "homepage": "https://github.com/gethopp/figma-mcp-bridge#readme",
+  "homepage": "https://github.com/zasuozz-oss/figma-to-unity#readme",
   "bugs": {
-    "url": "https://github.com/gethopp/figma-mcp-bridge/issues"
+    "url": "https://github.com/zasuozz-oss/figma-to-unity/issues"
+  },
+  "credits": {
+    "original": "Based on figma-mcp-bridge by gethopp",
+    "url": "https://github.com/gethopp/figma-mcp-bridge"
   },
   "license": "MIT",
   "dependencies": {

@@ -220,6 +220,12 @@ bun run build        # TypeScript → JavaScript
 
 ---
 
+## 🙏 Credits
+
+- MCP Bridge Server dựa trên [figma-mcp-bridge](https://github.com/gethopp/figma-mcp-bridge) bởi **gethopp**
+
+---
+
 ## 📝 License
 
 MIT License
