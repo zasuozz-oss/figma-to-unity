@@ -4,6 +4,14 @@
 // =============================================================================
 
 declare const JSZip: any;
+declare const __BUILD_VERSION__: string;
+declare const __BUILD_NUMBER__: string;
+
+// Show version in UI footer
+(function () {
+    var versionEl = document.getElementById('version-label');
+    if (versionEl) versionEl.textContent = 'v' + __BUILD_VERSION__ + ' build ' + __BUILD_NUMBER__;
+})();
 
 // ---------------------------------------------------------------------------
 // State

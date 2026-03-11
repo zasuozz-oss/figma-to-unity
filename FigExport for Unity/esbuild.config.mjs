@@ -4,6 +4,21 @@ import path from 'path';
 
 const isWatch = process.argv.includes('--watch');
 
+// Auto-increment build number
+const buildNumberPath = path.resolve('build_number.json');
+let buildData = { build: 0 };
+try { buildData = JSON.parse(fs.readFileSync(buildNumberPath, 'utf8')); } catch (e) { }
+buildData.build = (buildData.build || 0) + 1;
+fs.writeFileSync(buildNumberPath, JSON.stringify(buildData, null, 2) + '\n', 'utf8');
+const BUILD_VERSION = '0.0.1';
+const BUILD_NUMBER = String(buildData.build);
+console.log(`[build] v${BUILD_VERSION} build ${BUILD_NUMBER}`);
+
+const globalDefines = {
+    '__BUILD_VERSION__': JSON.stringify(BUILD_VERSION),
+    '__BUILD_NUMBER__': JSON.stringify(BUILD_NUMBER),
+};
+
 // Build main.ts → dist/main.js (Figma sandbox, no DOM)
 const mainBuildOptions = {
     entryPoints: ['src/main.ts'],
@@ -13,6 +28,7 @@ const mainBuildOptions = {
     format: 'iife',
     sourcemap: false,
     minify: !isWatch,
+    define: globalDefines,
 };
 
 // Build ui.ts → temp file, then inline into dist/ui.html
@@ -24,6 +40,7 @@ const uiBuildOptions = {
     format: 'iife',
     sourcemap: false,
     minify: !isWatch,
+    define: globalDefines,
 };
 
 /**
