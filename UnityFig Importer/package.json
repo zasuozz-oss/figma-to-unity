@@ -1,0 +1,20 @@
+{
+    "name": "com.figma.unity-importer",
+    "version": "1.0.0",
+    "displayName": "Figma to Unity Importer",
+    "description": "Import Figma designs into Unity UI via manifest.json + PNG assets.",
+    "unity": "2022.3",
+    "dependencies": {
+        "com.unity.textmeshpro": "3.0.6",
+        "com.unity.nuget.newtonsoft-json": "3.2.1"
+    },
+    "keywords": [
+        "figma",
+        "ui",
+        "importer",
+        "editor"
+    ],
+    "author": {
+        "name": "Figma-To-Unity"
+    }
+}

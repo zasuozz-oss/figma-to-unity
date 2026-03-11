@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 12px;
+      color: var(--figma-color-text, #e0e0e0);
+      background: var(--figma-color-bg, #2c2c2c);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Header */
+    .header {
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid var(--figma-color-border, #444);
+      flex-shrink: 0;
+    }
+
+    .header .logo {
+      font-size: 16px;
+    }
+
+    .header h2 {
+      font-size: 13px;
+      font-weight: 700;
+      flex: 1;
+    }
+
+    .header .sel-info {
+      font-size: 10px;
+      color: var(--figma-color-text-secondary, #999);
+    }
+
+    .size-btns {
+      display: flex;
+      gap: 2px;
+    }
+
+    .size-btn {
+      padding: 2px 5px;
+      font-size: 8px;
+      cursor: pointer;
+      border: 1px solid var(--figma-color-border, #555);
+      border-radius: 3px;
+      background: none;
+      color: var(--figma-color-text-secondary, #999);
+    }
+
+    .size-btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .size-btn.active {
+      background: var(--figma-color-bg-brand, #0d99ff);
+      border-color: var(--figma-color-bg-brand, #0d99ff);
+      color: white;
+    }
+
+    /* Options bar */
+    .options-bar {
+      padding: 6px 12px;
+      display: none;
+      flex-direction: column;
+      gap: 5px;
+      border-bottom: 1px solid var(--figma-color-border, #444);
+      flex-shrink: 0;
+    }
+
+    .options-bar.visible {
+      display: flex;
+    }
+
+    .opt-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .opt-label {
+      font-size: 9px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      color: var(--figma-color-text-secondary, #999);
+      width: 50px;
+      flex-shrink: 0;
+    }
+
+    .scale-select {
+      flex: 1;
+      padding: 4px 8px;
+      border: 1px solid var(--figma-color-border, #555);
+      border-radius: 4px;
+      background: var(--figma-color-bg-secondary, #383838);
+      color: var(--figma-color-text, #e0e0e0);
+      font-size: 11px;
+      cursor: pointer;
+      appearance: none;
+      -webkit-appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg width='8' height='5' viewBox='0 0 8 5' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L4 4L7 1' stroke='%23999' stroke-width='1.2' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 8px center;
+    }
+
+    .filter-chips {
+      display: flex;
+      gap: 2px;
+      flex: 1;
+    }
+
+    .chip {
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 9px;
+      cursor: pointer;
+      border: 1px solid var(--figma-color-border, #555);
+      background: none;
+      color: var(--figma-color-text-secondary, #999);
+      transition: all 0.1s;
+    }
+
+    .chip.active {
+      background: var(--figma-color-bg-brand, #0d99ff);
+      border-color: var(--figma-color-bg-brand, #0d99ff);
+      color: white;
+    }
+
+    /* No selection */
+    .no-selection {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      color: var(--figma-color-text-tertiary, #777);
+    }
+
+    .no-selection .icon {
+      font-size: 28px;
+      margin-bottom: 6px;
+    }
+
+    /* Main content area: tree + preview side by side or stacked */
+    .content {
+      flex: 1;
+      display: none;
+      overflow: hidden;
+      flex-direction: row;
+    }
+
+    .content.visible {
+      display: flex;
+    }
+
+    /* Layer tree */
+    .tree-panel-wrapper {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 120px;
+      transition: flex 0.2s;
+      overflow: hidden;
+    }
+
+    .tree-search {
+      padding: 4px 6px;
+      border-bottom: 1px solid #444;
+      flex-shrink: 0;
+    }
+
+    .tree-search input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 4px 6px;
+      border: 1px solid #555;
+      border-radius: 4px;
+      background: #2a2a2a;
+      color: #ddd;
+      font-size: 11px;
+      outline: none;
+    }
+
+    .tree-search input:focus {
+      border-color: #0d99ff;
+    }
+
+    .tree-search input::placeholder {
+      color: #777;
+    }
+
+    .tree-panel {
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    /* Expanded tree mode */
+    .content.tree-expanded .tree-panel-wrapper {
+      flex: 3;
+    }
+
+    .content.tree-expanded .preview-panel {
+      flex: 1;
+    }
+
+    .content.tree-full .tree-panel-wrapper {
+      flex: 1;
+    }
+
+    .content.tree-full .preview-panel {
+      display: none;
+    }
+
+    .tree-resize-btn {
+      width: 14px;
+      flex-shrink: 0;
+      background: var(--figma-color-bg-secondary, #333);
+      border: none;
+      border-left: 1px solid var(--figma-color-border, #444);
+      border-right: 1px solid var(--figma-color-border, #444);
+      color: var(--figma-color-text-secondary, #999);
+      cursor: pointer;
+      font-size: 8px;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.1s;
+    }
+
+    .tree-resize-btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .tree-item {
+      display: flex;
+      align-items: center;
+      padding: 2px 6px 2px 0;
+      font-size: 11px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      min-height: 28px;
+      cursor: pointer;
+      transition: background 0.08s;
+      position: relative;
+      z-index: 1;
+    }
+
+    .tree-item:hover {
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .tree-item.selected {
+      background: rgba(13, 153, 255, 0.15);
+    }
+
+    .tree-item.excluded {
+      opacity: 0.3;
+    }
+
+    .tree-item.merged-child {
+      opacity: 0.25;
+      font-style: italic;
+    }
+
+    .tree-indent {
+      width: 14px;
+      flex-shrink: 0;
+    }
+
+    .tree-toggle {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 8px;
+      color: var(--figma-color-text-secondary, #999);
+      border: none;
+      background: none;
+      padding: 0;
+      transition: transform 0.15s;
+    }
+
+    .tree-toggle.expanded {
+      transform: rotate(90deg);
+    }
+
+    .tree-toggle.hidden {
+      visibility: hidden;
+    }
+
+    .tree-cb {
+      width: 13px;
+      height: 13px;
+      flex-shrink: 0;
+      margin: 0 3px;
+      accent-color: var(--figma-color-bg-brand, #0d99ff);
+      cursor: pointer;
+    }
+
+    .tree-icon {
+      width: 14px;
+      font-size: 10px;
+      text-align: center;
+      flex-shrink: 0;
+      margin-right: 3px;
+    }
+
+    .tree-name {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+      cursor: pointer;
+    }
+
+    .tree-name-input {
+      flex: 1;
+      min-width: 0;
+      padding: 0 2px;
+      margin: 0;
+      border: 1px solid var(--figma-color-border-brand, #0d99ff);
+      border-radius: 2px;
+      background: var(--figma-color-bg, #2c2c2c);
+      color: var(--figma-color-text, #fff);
+      font-size: inherit;
+      font-family: inherit;
+      height: 18px;
+      outline: none;
+    }
+
+    .tree-size {
+      font-size: 8px;
+      color: var(--figma-color-text-secondary, #777);
+      flex-shrink: 0;
+      margin: 0 3px;
+    }
+
+    .tree-merge-btn {
+      padding: 1px 4px;
+      border-radius: 2px;
+      font-size: 8px;
+      cursor: pointer;
+      border: 1px solid var(--figma-color-border, #555);
+      background: none;
+      color: var(--figma-color-text-secondary, #999);
+      flex-shrink: 0;
+      display: none;
+      transition: all 0.1s;
+    }
+
+    .tree-merge-btn.show {
+      display: inline-block;
+    }
+
+    .tree-merge-btn.active {
+      background: #e67e22;
+      border-color: #e67e22;
+      color: white;
+    }
+
+    .tree-png-btn {
+      padding: 1px 4px;
+      border-radius: 2px;
+      font-size: 7px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid var(--figma-color-border, #555);
+      background: none;
+      color: var(--figma-color-text-secondary, #999);
+      flex-shrink: 0;
+      transition: all 0.1s;
+      letter-spacing: 0.3px;
+    }
+
+    .tree-png-btn.active {
+      background: #e06666;
+      border-color: #e06666;
+      color: white;
+    }
+
+    /* Preview panel (right side) — 2/3 width */
+    .preview-panel {
+      flex: 2;
+      overflow: hidden;
+      border-left: 1px solid var(--figma-color-border, #444);
+      background: var(--figma-color-bg-secondary, #333);
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .preview-header {
+      padding: 6px 8px;
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--figma-color-text-secondary, #999);
+      border-bottom: 1px solid var(--figma-color-border, #444);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .preview-lock-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 12px;
+      padding: 0 2px;
+      opacity: 0.5;
+      margin-left: auto;
+    }
+
+    .preview-lock-btn.locked {
+      opacity: 1;
+    }
+
+    .preview-close {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--figma-color-text-secondary, #999);
+      font-size: 12px;
+      padding: 0 2px;
+    }
+
+    .preview-image-wrap {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px;
+      overflow: auto;
+      background: repeating-conic-gradient(#3a3a3a 0% 25%, #333 0% 50%) 0/16px 16px;
+    }
+
+    .preview-image-wrap img {
+      max-width: 100%;
+      max-height: 100%;
+      border-radius: 2px;
+    }
+
+    .preview-info {
+      padding: 6px 8px;
+      font-size: 9px;
+      color: var(--figma-color-text-secondary, #999);
+      border-top: 1px solid var(--figma-color-border, #444);
+    }
+
+    .preview-loading {
+      color: var(--figma-color-text-secondary, #777);
+      font-size: 11px;
+    }
+
+    /* Bottom bar */
+    .bottom-bar {
+      padding: 6px 12px;
+      border-top: 1px solid var(--figma-color-border, #444);
+      flex-shrink: 0;
+    }
+
+    .btn-export {
+      width: 100%;
+      padding: 9px;
+      background: var(--figma-color-bg-brand, #0d99ff);
+      color: white;
+      border: none;
+      border-radius: 5px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .btn-export:hover {
+      opacity: 0.9;
+    }
+
+    .btn-export:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* Progress & Log */
+    .progress-area {
+      display: none;
+      padding: 6px 12px;
+      flex-shrink: 0;
+    }
+
+    .progress-area.visible {
+      display: block;
+    }
+
+    .progress-bar-box {
+      width: 100%;
+      height: 3px;
+      background: var(--figma-color-bg-secondary, #444);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-bottom: 3px;
+    }
+
+    .progress-bar {
+      height: 100%;
+      background: var(--figma-color-bg-brand, #0d99ff);
+      border-radius: 2px;
+      width: 0%;
+      transition: width 0.2s;
+    }
+
+    .progress-label {
+      font-size: 9px;
+      color: var(--figma-color-text-secondary, #999);
+    }
+
+    .log-area {
+      display: none;
+      flex-shrink: 0;
+    }
+
+    .log-area.visible {
+      display: block;
+    }
+
+    .log {
+      font-family: 'SF Mono', 'Menlo', monospace;
+      font-size: 9px;
+      line-height: 1.4;
+      padding: 4px 12px;
+      max-height: 80px;
+      overflow-y: auto;
+      background: var(--figma-color-bg-secondary, #333);
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .error-msg {
+      background: #5c1a1a;
+      color: #ff6b6b;
+      padding: 4px 12px;
+      font-size: 10px;
+      display: none;
+      flex-shrink: 0;
+    }
+
+    .error-msg.visible {
+      display: block;
+    }
+
+    /* Context menu */
+    .ctx-menu {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      min-width: 140px;
+      background: var(--figma-color-bg, #2c2c2c);
+      border: 1px solid var(--figma-color-border, #444);
+      border-radius: 4px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+      padding: 4px 0;
+      font-size: 11px;
+    }
+
+    .ctx-menu.visible {
+      display: block;
+    }
+
+    .ctx-menu-item {
+      padding: 6px 12px;
+      cursor: pointer;
+      color: var(--figma-color-text, #fff);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .ctx-menu-item:hover {
+      background: var(--figma-color-bg-brand, #0d99ff);
+    }
+
+    .ctx-menu-sep {
+      border-top: 1px solid var(--figma-color-border, #444);
+      margin: 4px 0;
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Context menu -->
+  <div id="ctx-menu" class="ctx-menu">
+    <div class="ctx-menu-item" id="ctx-rename">✏️ Rename</div>
+    <div class="ctx-menu-item" id="ctx-toggle">👁 Toggle Visibility</div>
+    <div class="ctx-menu-item" id="ctx-merge">🔗 Toggle Merge</div>
+    <div class="ctx-menu-sep"></div>
+    <div class="ctx-menu-item" id="ctx-export">📦 Export This Element</div>
+  </div>
+
+  <!-- Header -->
+  <div class="header">
+    <span class="logo">🎨</span>
+    <h2>Figma → Unity</h2>
+    <div class="size-btns">
+      <button class="size-btn" data-size="s">S</button>
+      <button class="size-btn active" data-size="m">M</button>
+      <button class="size-btn" data-size="l">L</button>
+    </div>
+    <span id="sel-info" class="sel-info"></span>
+  </div>
+
+  <!-- Options bar -->
+  <div id="options-bar" class="options-bar">
+    <div class="opt-row">
+      <span class="opt-label">Scale</span>
+      <select id="scale-select" class="scale-select">
+        <optgroup label="Scale">
+          <option value="s:0.5">0.5x</option>
+          <option value="s:0.75">0.75x</option>
+          <option value="s:1">1x</option>
+          <option value="s:1.5">1.5x</option>
+          <option value="s:2" selected>2x</option>
+          <option value="s:3">3x</option>
+          <option value="s:4">4x</option>
+        </optgroup>
+        <optgroup label="Fixed Size">
+          <option value="w:512">512w</option>
+          <option value="h:512">512h</option>
+          <option value="w:1024">1024w</option>
+          <option value="h:1024">1024h</option>
+        </optgroup>
+      </select>
+    </div>
+    <div class="opt-row">
+      <span class="opt-label">Tools</span>
+      <div style="display:flex;gap:2px;flex:1;"></div>
+      <button id="reload-btn" class="preview-lock-btn" title="Reload plugin (re-scan selection)">🔃</button>
+
+      <button id="preview-lock" class="preview-lock-btn" title="Lock canvas & preview">🔓</button>
+    </div>
+    <div class="opt-row" id="rename-row">
+      <span class="opt-label">Rename</span>
+      <input id="rename-prefix" type="text" placeholder="prefix..."
+        style="flex:1;min-width:0;padding:2px 6px;border:1px solid #444;border-radius:4px;background:#2a2a2a;color:#fff;font-size:11px;height:22px;">
+      <button id="rename-all" class="preview-lock-btn" title="Rename elements (snake_case)">✏️</button>
+      <button id="undo-rename" class="preview-lock-btn" title="Undo rename (restore original)"
+        style="display:none;">↩️</button>
+    </div>
+  </div>
+
+  <!-- No selection -->
+  <div id="no-selection" class="no-selection">
+    <div class="icon">📐</div>
+    <div>Select a Frame to export</div>
+  </div>
+
+  <!-- Main content: tree + preview -->
+  <div id="content" class="content">
+    <div class="tree-panel-wrapper">
+      <div class="tree-search">
+        <input type="text" id="tree-search-input" placeholder="🔍 Search elements..." />
+      </div>
+      <div id="tree-panel" class="tree-panel"></div>
+    </div>
+    <button id="tree-resize-btn" class="tree-resize-btn" title="Expand/Collapse tree">◀</button>
+    <div id="preview-panel" class="preview-panel">
+      <div class="preview-header">
+        <span id="preview-title">Preview</span>
+      </div>
+      <div id="preview-image-wrap" class="preview-image-wrap">
+        <span class="preview-loading">Click an element</span>
+      </div>
+      <div id="preview-info" class="preview-info"></div>
+    </div>
+  </div>
+
+  <!-- Progress -->
+  <div id="progress-area" class="progress-area">
+    <div class="progress-bar-box">
+      <div id="progress-bar" class="progress-bar"></div>
+    </div>
+    <div id="progress-label" class="progress-label">Preparing...</div>
+  </div>
+
+  <!-- Error -->
+  <div id="error-msg" class="error-msg"></div>
+
+  <!-- Log -->
+  <div id="log-area" class="log-area">
+    <div id="log" class="log"></div>
+  </div>
+
+  <!-- Bottom bar -->
+  <div class="bottom-bar" style="display:flex;gap:6px;">
+    <button id="import-settings-btn" title="Import Settings"
+      style="background:#555;color:#fff;border:none;border-radius:4px;padding:6px 10px;font-size:11px;cursor:pointer;">📥
+      Import</button>
+    <input type="file" id="import-settings-file" accept=".json" style="display:none;">
+    <button id="export-btn" class="btn-export" disabled style="flex:1;">▶ Export for Unity</button>
+  </div>
+
+  <!-- Success Popup -->
+  <div id="export-success-popup"
+    style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9999;align-items:center;justify-content:center;">
+    <div
+      style="background:#2a2a2a;border:1px solid #555;border-radius:12px;padding:24px;text-align:center;max-width:280px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.5);animation:popIn 0.3s ease;">
+      <div style="font-size:40px;margin-bottom:12px;">✅</div>
+      <div style="font-size:14px;font-weight:600;color:#fff;margin-bottom:6px;">Export Successful!</div>
+      <div id="export-success-detail" style="font-size:11px;color:#aaa;margin-bottom:16px;"></div>
+      <button id="export-success-close"
+        style="background:#4CAF50;color:#fff;border:none;border-radius:6px;padding:8px 24px;font-size:12px;cursor:pointer;font-weight:600;">OK</button>
+    </div>
+  </div>
+  <style>
+    @keyframes popIn {
+      from {
+        transform: scale(0.8);
+        opacity: 0;
+      }
+
+      to {
+        transform: scale(1);
+        opacity: 1;
+      }
+    }
+  </style>
+
+  <!-- SCRIPT_PLACEHOLDER -->
+</body>
+
+</html>
