@@ -339,6 +339,36 @@ export async function exportDesign(
         fonts: fonts,
     };
 
+    // Step 7: Slim manifest (strip redundant data for sprite elements)
+    if (options.slimManifest) {
+        var slimCount = 0;
+        for (var si = 0; si < manifest.elements.length; si++) {
+            var slimEl = manifest.elements[si];
+            // Elements with sprites don't need rect position (Unity uses anchors)
+            // but we preserve w/h for fallback sizing
+            if (slimEl.asset) {
+                slimEl.rect = { x: 0, y: 0, w: slimEl.rect.w, h: slimEl.rect.h };
+                // Strip fill for sprite elements (sprite renders its own visuals)
+                if (slimEl.style) {
+                    delete (slimEl.style as any).fill;
+                    // If style is now empty (no cornerRadius, opacity=1), remove it
+                    if (slimEl.style.cornerRadius === 0 && slimEl.style.opacity === 1
+                        && !slimEl.style.shadow) {
+                        slimEl.style = undefined;
+                    }
+                }
+                slimCount++;
+            }
+            // Strip children array if empty (save JSON bytes)
+            if (slimEl.children && slimEl.children.length === 0) {
+                (slimEl as any).children = undefined;
+            }
+        }
+        if (slimCount > 0) {
+            console.log('[Export] Slim manifest: stripped redundant data for ' + slimCount + ' sprite element(s)');
+        }
+    }
+
     return { manifest: manifest, assets: assets };
 }
 

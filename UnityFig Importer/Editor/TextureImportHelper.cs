@@ -6,10 +6,84 @@ using System.Collections.Generic;
 using System.IO;
 using FigmaImporter.Data;
 using UnityEditor;
+using UnityEditor.U2D;
 using UnityEngine;
+using UnityEngine.U2D;
 
 namespace FigmaImporter
 {
+    // =========================================================================
+    // TextureImportSettings — User-configurable texture import settings
+    // =========================================================================
+    [System.Serializable]
+    public class TextureImportSettings
+    {
+        // General settings
+        public int MaxTextureSize = 2048;
+        public bool AutoDetectMaxSize = true;
+        public bool MipmapEnabled = false;
+        public TextureImporterCompression Compression = TextureImporterCompression.Compressed;
+
+        // Android platform override
+        public bool OverrideAndroid = true;
+        public TextureImporterFormat AndroidFormat = TextureImporterFormat.ASTC_4x4;
+        public int AndroidMaxSize = 2048;
+
+        // iOS platform override
+        public bool OverrideiOS = true;
+        public TextureImporterFormat iOSFormat = TextureImporterFormat.ASTC_4x4;
+        public int iOSMaxSize = 2048;
+
+        /// <summary>
+        /// Calculate the optimal max texture size based on actual pixel dimensions.
+        /// </summary>
+        public static int CalculateOptimalMaxSize(int pixelWidth, int pixelHeight)
+        {
+            int maxDimension = Mathf.Max(pixelWidth, pixelHeight);
+            if (maxDimension <= 64) return 64;
+            if (maxDimension <= 128) return 128;
+            if (maxDimension <= 256) return 256;
+            if (maxDimension <= 512) return 512;
+            if (maxDimension <= 1024) return 1024;
+            return 2048;
+        }
+
+        // EditorPrefs keys
+        const string PREF_PREFIX = "FigmaImporter_Tex_";
+
+        public void SaveToPrefs()
+        {
+            EditorPrefs.SetInt(PREF_PREFIX + "MaxSize", MaxTextureSize);
+            EditorPrefs.SetBool(PREF_PREFIX + "AutoDetect", AutoDetectMaxSize);
+            EditorPrefs.SetBool(PREF_PREFIX + "Mipmap", MipmapEnabled);
+            EditorPrefs.SetInt(PREF_PREFIX + "Compression", (int)Compression);
+
+            EditorPrefs.SetBool(PREF_PREFIX + "Android", OverrideAndroid);
+            EditorPrefs.SetInt(PREF_PREFIX + "AndroidFmt", (int)AndroidFormat);
+            EditorPrefs.SetInt(PREF_PREFIX + "AndroidMax", AndroidMaxSize);
+
+            EditorPrefs.SetBool(PREF_PREFIX + "iOS", OverrideiOS);
+            EditorPrefs.SetInt(PREF_PREFIX + "iOSFmt", (int)iOSFormat);
+            EditorPrefs.SetInt(PREF_PREFIX + "iOSMax", iOSMaxSize);
+        }
+
+        public void LoadFromPrefs()
+        {
+            MaxTextureSize = EditorPrefs.GetInt(PREF_PREFIX + "MaxSize", 2048);
+            AutoDetectMaxSize = EditorPrefs.GetBool(PREF_PREFIX + "AutoDetect", true);
+            MipmapEnabled = EditorPrefs.GetBool(PREF_PREFIX + "Mipmap", false);
+            Compression = (TextureImporterCompression)EditorPrefs.GetInt(PREF_PREFIX + "Compression", (int)TextureImporterCompression.Compressed);
+
+            OverrideAndroid = EditorPrefs.GetBool(PREF_PREFIX + "Android", true);
+            AndroidFormat = (TextureImporterFormat)EditorPrefs.GetInt(PREF_PREFIX + "AndroidFmt", (int)TextureImporterFormat.ASTC_4x4);
+            AndroidMaxSize = EditorPrefs.GetInt(PREF_PREFIX + "AndroidMax", 2048);
+
+            OverrideiOS = EditorPrefs.GetBool(PREF_PREFIX + "iOS", true);
+            iOSFormat = (TextureImporterFormat)EditorPrefs.GetInt(PREF_PREFIX + "iOSFmt", (int)TextureImporterFormat.ASTC_4x4);
+            iOSMaxSize = EditorPrefs.GetInt(PREF_PREFIX + "iOSMax", 2048);
+        }
+    }
+
     public static class TextureImportHelper
     {
         /// <summary>
@@ -21,9 +95,11 @@ namespace FigmaImporter
             string targetFolder,
             ManifestData manifest,
             bool applyNineSlice,
+            TextureImportSettings texSettings = null,
             System.Action<int, int, string> onProgress = null)
         {
             var result = new Dictionary<string, Sprite>();
+            if (texSettings == null) texSettings = new TextureImportSettings();
 
             // Ensure target folder exists
             CreateFolderRecursive(targetFolder);
@@ -35,33 +111,67 @@ namespace FigmaImporter
             // Build cornerRadius lookup from manifest elements for 9-slice
             var cornerRadiusLookup = BuildCornerRadiusLookup(manifest);
 
+            // ── Phase 1: Copy files + configure importers (BATCHED) ──
+            AssetDatabase.StartAssetEditing();
+            try
+            {
+                for (int i = 0; i < pngFiles.Length; i++)
+                {
+                    string srcPath = pngFiles[i];
+                    string fileName = Path.GetFileName(srcPath);
+
+                    onProgress?.Invoke(i + 1, total, $"Copying: {fileName}");
+
+                    // Copy file to target folder
+                    string destPath = Path.Combine(targetFolder, fileName);
+                    string destDir = Path.GetDirectoryName(destPath);
+                    if (!string.IsNullOrEmpty(destDir) && !Directory.Exists(destDir))
+                        Directory.CreateDirectory(destDir);
+                    File.Copy(srcPath, destPath, overwrite: true);
+                }
+            }
+            finally
+            {
+                AssetDatabase.StopAssetEditing();
+            }
+
+            // Force reimport all copied files
+            AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+
+            // ── Phase 2: Configure importers (BATCHED) ──
+            AssetDatabase.StartAssetEditing();
+            try
+            {
+                for (int i = 0; i < pngFiles.Length; i++)
+                {
+                    string fileName = Path.GetFileName(pngFiles[i]);
+                    string destPath = Path.Combine(targetFolder, fileName);
+                    string assetPath = FilePathToAssetPath(destPath);
+
+                    onProgress?.Invoke(i + 1, total, $"Configuring: {fileName}");
+
+                    var importer = AssetImporter.GetAtPath(assetPath) as TextureImporter;
+                    if (importer != null)
+                    {
+                        ConfigureSpriteImporter(importer, fileName, cornerRadiusLookup, applyNineSlice, texSettings);
+                        // Note: NO SaveAndReimport() here — batched by StopAssetEditing
+                    }
+                }
+            }
+            finally
+            {
+                AssetDatabase.StopAssetEditing();
+            }
+
+            // ── Phase 3: Reimport all + load sprites ──
+            AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+
             for (int i = 0; i < pngFiles.Length; i++)
             {
-                string srcPath = pngFiles[i];
-                string fileName = Path.GetFileName(srcPath);
-
-                onProgress?.Invoke(i + 1, total, $"Importing: {fileName}");
-
-                // Copy file to target folder (ensure directory exists)
+                string fileName = Path.GetFileName(pngFiles[i]);
                 string destPath = Path.Combine(targetFolder, fileName);
-                string destDir = Path.GetDirectoryName(destPath);
-                if (!string.IsNullOrEmpty(destDir) && !Directory.Exists(destDir))
-                    Directory.CreateDirectory(destDir);
-                File.Copy(srcPath, destPath, overwrite: true);
-
-                // Convert to Unity asset path (Assets/...)
                 string assetPath = FilePathToAssetPath(destPath);
-                AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceUpdate);
 
-                // Configure TextureImporter
-                var importer = AssetImporter.GetAtPath(assetPath) as TextureImporter;
-                if (importer != null)
-                {
-                    ConfigureSpriteImporter(importer, fileName, cornerRadiusLookup, applyNineSlice);
-                    importer.SaveAndReimport();
-                }
-
-                // Load the sprite
                 Sprite sprite = AssetDatabase.LoadAssetAtPath<Sprite>(assetPath);
                 if (sprite != null)
                 {
@@ -73,7 +183,6 @@ namespace FigmaImporter
                 }
             }
 
-            AssetDatabase.Refresh();
             return result;
         }
 
@@ -81,27 +190,54 @@ namespace FigmaImporter
             TextureImporter importer,
             string fileName,
             Dictionary<string, float> cornerRadiusLookup,
-            bool applyNineSlice)
+            bool applyNineSlice,
+            TextureImportSettings settings)
         {
+            // Basic type settings
             importer.textureType = TextureImporterType.Sprite;
             importer.spriteImportMode = SpriteImportMode.Single;
-            importer.maxTextureSize = 2048;
-            importer.mipmapEnabled = false;
-            importer.isReadable = false;
-            importer.textureCompression = TextureImporterCompression.Compressed;
-
             importer.spritePixelsPerUnit = 100;
+            importer.isReadable = false;
 
-            // 9-slice detection disabled — use Simple mode for all sprites
-            // TODO: re-enable when 9-slice sizing is tuned properly
-            // if (applyNineSlice && cornerRadiusLookup.TryGetValue(fileName, out float cornerRadius))
-            // {
-            //     if (cornerRadius > 0)
-            //     {
-            //         float border = cornerRadius * scale;
-            //         importer.spriteBorder = new Vector4(border, border, border, border);
-            //     }
-            // }
+            // User-configurable general settings
+            importer.mipmapEnabled = settings.MipmapEnabled;
+            importer.textureCompression = settings.Compression;
+
+            // Max size: auto-detect from actual texture dimensions or use user setting
+            int maxSize = settings.MaxTextureSize;
+            if (settings.AutoDetectMaxSize)
+            {
+                // Read actual texture dimensions from the file
+                var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(importer.assetPath);
+                if (tex != null)
+                {
+                    maxSize = TextureImportSettings.CalculateOptimalMaxSize(tex.width, tex.height);
+                }
+            }
+            importer.maxTextureSize = maxSize;
+
+            // ── Android platform override ──
+            if (settings.OverrideAndroid)
+            {
+                var androidSettings = importer.GetPlatformTextureSettings("Android");
+                androidSettings.overridden = true;
+                androidSettings.format = settings.AndroidFormat;
+                androidSettings.maxTextureSize = settings.AutoDetectMaxSize ? maxSize : settings.AndroidMaxSize;
+                importer.SetPlatformTextureSettings(androidSettings);
+            }
+
+            // ── iOS platform override ──
+            if (settings.OverrideiOS)
+            {
+                var iosSettings = importer.GetPlatformTextureSettings("iPhone");
+                iosSettings.overridden = true;
+                iosSettings.format = settings.iOSFormat;
+                iosSettings.maxTextureSize = settings.AutoDetectMaxSize ? maxSize : settings.iOSMaxSize;
+                importer.SetPlatformTextureSettings(iosSettings);
+            }
+
+            // 9-slice detection (currently disabled)
+            // TODO Phase 5: re-enable with Smart 9-Slice Pipeline
         }
 
         /// <summary>

@@ -56,6 +56,14 @@ namespace FigmaImporter
         // Build options
         BuildOptions _buildOptions = new BuildOptions();
 
+        // Texture import settings (user-configurable)
+        TextureImportSettings _textureSettings = new TextureImportSettings();
+        bool _showTextureSettings;
+
+        // Sprite Atlas settings
+        SpriteAtlasSettings _atlasSettings = new SpriteAtlasSettings();
+        bool _showAtlasSettings;
+
         // Hierarchy preview
         bool _showHierarchy = true;
         Vector2 _hierarchyScroll;
@@ -88,6 +96,10 @@ namespace FigmaImporter
             // Restore saved paths
             _spriteOutputFolder = EditorPrefs.GetString(PREF_SPRITE_FOLDER, "");
             _exportFolderPath = EditorPrefs.GetString(PREF_EXPORT_FOLDER, "");
+
+            // Restore texture settings
+            _textureSettings.LoadFromPrefs();
+            _atlasSettings.LoadFromPrefs();
 
             if (string.IsNullOrEmpty(_spriteOutputFolder))
                 _spriteOutputFolder = AutoDetectSpriteFolder();
@@ -253,6 +265,16 @@ namespace FigmaImporter
 
             // Build options
             DrawBuildOptions();
+
+            EditorGUILayout.Space(4);
+
+            // Texture import settings
+            DrawTextureSettings();
+
+            EditorGUILayout.Space(4);
+
+            // Sprite Atlas settings
+            DrawSpriteAtlasSettings();
 
             EditorGUILayout.Space(8);
 
@@ -620,6 +642,147 @@ namespace FigmaImporter
             EditorGUILayout.EndVertical();
         }
 
+        void DrawTextureSettings()
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            _showTextureSettings = EditorGUILayout.Foldout(_showTextureSettings, "🖼 Texture Import Settings", true);
+
+            if (_showTextureSettings)
+            {
+                EditorGUI.indentLevel++;
+
+                // General
+                EditorGUILayout.LabelField("General", EditorStyles.miniBoldLabel);
+                _textureSettings.AutoDetectMaxSize = EditorGUILayout.Toggle(
+                    "Auto-detect Max Size", _textureSettings.AutoDetectMaxSize);
+
+                if (!_textureSettings.AutoDetectMaxSize)
+                {
+                    _textureSettings.MaxTextureSize = EditorGUILayout.IntPopup(
+                        "Max Texture Size", _textureSettings.MaxTextureSize,
+                        new[] { "64", "128", "256", "512", "1024", "2048", "4096" },
+                        new[] { 64, 128, 256, 512, 1024, 2048, 4096 });
+                }
+                else
+                {
+                    EditorGUILayout.LabelField("Max Size", "Auto (based on PNG dimensions)",
+                        EditorStyles.miniLabel);
+                }
+
+                _textureSettings.Compression = (TextureImporterCompression)EditorGUILayout.EnumPopup(
+                    "Compression", _textureSettings.Compression);
+                _textureSettings.MipmapEnabled = EditorGUILayout.Toggle(
+                    "Generate Mipmaps", _textureSettings.MipmapEnabled);
+
+                EditorGUILayout.Space(4);
+
+                // Android override
+                EditorGUILayout.LabelField("Android", EditorStyles.miniBoldLabel);
+                _textureSettings.OverrideAndroid = EditorGUILayout.Toggle(
+                    "Override Android", _textureSettings.OverrideAndroid);
+                if (_textureSettings.OverrideAndroid)
+                {
+                    EditorGUI.indentLevel++;
+                    _textureSettings.AndroidFormat = (TextureImporterFormat)EditorGUILayout.EnumPopup(
+                        "Format", _textureSettings.AndroidFormat);
+                    if (!_textureSettings.AutoDetectMaxSize)
+                    {
+                        _textureSettings.AndroidMaxSize = EditorGUILayout.IntPopup(
+                            "Max Size", _textureSettings.AndroidMaxSize,
+                            new[] { "64", "128", "256", "512", "1024", "2048", "4096" },
+                            new[] { 64, 128, 256, 512, 1024, 2048, 4096 });
+                    }
+                    EditorGUI.indentLevel--;
+                }
+
+                EditorGUILayout.Space(4);
+
+                // iOS override
+                EditorGUILayout.LabelField("iOS", EditorStyles.miniBoldLabel);
+                _textureSettings.OverrideiOS = EditorGUILayout.Toggle(
+                    "Override iOS", _textureSettings.OverrideiOS);
+                if (_textureSettings.OverrideiOS)
+                {
+                    EditorGUI.indentLevel++;
+                    _textureSettings.iOSFormat = (TextureImporterFormat)EditorGUILayout.EnumPopup(
+                        "Format", _textureSettings.iOSFormat);
+                    if (!_textureSettings.AutoDetectMaxSize)
+                    {
+                        _textureSettings.iOSMaxSize = EditorGUILayout.IntPopup(
+                            "Max Size", _textureSettings.iOSMaxSize,
+                            new[] { "64", "128", "256", "512", "1024", "2048", "4096" },
+                            new[] { 64, 128, 256, 512, 1024, 2048, 4096 });
+                    }
+                    EditorGUI.indentLevel--;
+                }
+
+                EditorGUI.indentLevel--;
+
+                // Save on change
+                if (GUI.changed)
+                    _textureSettings.SaveToPrefs();
+            }
+
+            EditorGUILayout.EndVertical();
+        }
+
+        void DrawSpriteAtlasSettings()
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            _showAtlasSettings = EditorGUILayout.Foldout(_showAtlasSettings, "📦 Sprite Atlas Settings", true);
+
+            if (_showAtlasSettings)
+            {
+                EditorGUI.indentLevel++;
+
+                _atlasSettings.CreateAtlas = EditorGUILayout.Toggle(
+                    "Create Sprite Atlas", _atlasSettings.CreateAtlas);
+
+                if (_atlasSettings.CreateAtlas)
+                {
+                    _atlasSettings.AtlasSubfolder = EditorGUILayout.TextField(
+                        "Atlas Subfolder", _atlasSettings.AtlasSubfolder);
+                    _atlasSettings.Padding = EditorGUILayout.IntSlider(
+                        "Padding (px)", _atlasSettings.Padding, 0, 8);
+                    _atlasSettings.EnableRotation = EditorGUILayout.Toggle(
+                        "Allow Rotation", _atlasSettings.EnableRotation);
+                    _atlasSettings.IncludeInBuild = EditorGUILayout.Toggle(
+                        "Include in Build", _atlasSettings.IncludeInBuild);
+
+                    EditorGUILayout.Space(4);
+
+                    _atlasSettings.UseSameAsTextureSettings = EditorGUILayout.Toggle(
+                        "Use Texture Settings", _atlasSettings.UseSameAsTextureSettings);
+
+                    if (!_atlasSettings.UseSameAsTextureSettings)
+                    {
+                        EditorGUI.indentLevel++;
+                        _atlasSettings.AtlasMaxSize = EditorGUILayout.IntPopup(
+                            "Max Size", _atlasSettings.AtlasMaxSize,
+                            new[] { "256", "512", "1024", "2048", "4096" },
+                            new[] { 256, 512, 1024, 2048, 4096 });
+                        _atlasSettings.AtlasAndroidFormat = (TextureImporterFormat)EditorGUILayout.EnumPopup(
+                            "Android Format", _atlasSettings.AtlasAndroidFormat);
+                        _atlasSettings.AtlasiOSFormat = (TextureImporterFormat)EditorGUILayout.EnumPopup(
+                            "iOS Format", _atlasSettings.AtlasiOSFormat);
+                        EditorGUI.indentLevel--;
+                    }
+                    else
+                    {
+                        EditorGUILayout.LabelField("", "Inherits from Texture Import Settings",
+                            EditorStyles.miniLabel);
+                    }
+                }
+
+                EditorGUI.indentLevel--;
+
+                if (GUI.changed)
+                    _atlasSettings.SaveToPrefs();
+            }
+
+            EditorGUILayout.EndVertical();
+        }
+
         void DrawBuildButton()
         {
             GUI.enabled = !_isBuilding && _manifest != null;
@@ -751,6 +914,7 @@ namespace FigmaImporter
                         targetFolder,
                         _manifest,
                         _buildOptions.ApplyNineSlice,
+                        _textureSettings,
                         (current, total, label) =>
                         {
                             _buildProgress = (float)current / total * 0.3f; // 0-30%
@@ -760,6 +924,24 @@ namespace FigmaImporter
                     _buildLog.Add(new BuildLogEntry(
                         BuildLogEntry.LogLevel.Success,
                         $"Imported {sprites.Count} textures → {TruncatePath(targetFolder, 40)}"));
+
+                    // Create Sprite Atlas (if enabled)
+                    if (_atlasSettings.CreateAtlas)
+                    {
+                        _buildProgressLabel = "Creating Sprite Atlas...";
+                        Repaint();
+
+                        string screenName = _manifest.Screen?.Name ?? "FigmaImport";
+                        var atlas = SpriteAtlasHelper.CreateAtlas(
+                            targetFolder, screenName, _atlasSettings, _textureSettings);
+
+                        if (atlas != null)
+                        {
+                            _buildLog.Add(new BuildLogEntry(
+                                BuildLogEntry.LogLevel.Success,
+                                $"SpriteAtlas created: {atlas.name}"));
+                        }
+                    }
                 }
 
                 // 2. Calculate canvas scale factor

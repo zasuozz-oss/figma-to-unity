@@ -338,6 +338,9 @@ namespace FigmaImporter
                         // Skip Image for root container (no parent, no asset) — it's not visual
                         if (string.IsNullOrEmpty(element.ParentId) && string.IsNullOrEmpty(element.Asset))
                             break;
+                        // Skip Image for empty containers — no asset + no visible fill
+                        if (string.IsNullOrEmpty(element.Asset) && !HasVisibleFill(element))
+                            break;
                         AddImageComponent(go, element, sprites, spriteScaleRatio, options, log);
                         break;
 
@@ -509,9 +512,8 @@ namespace FigmaImporter
                     $"{element.Name} — font \"{element.Text.FontFamily} {element.Text.FontStyle}\" not found, using default");
             }
 
-            // RaycastTarget optimization
-            if (options.DisableRaycastTarget && !ShouldKeepRaycast(element))
-                text.raycastTarget = false;
+            // RaycastTarget: text elements ALWAYS disable — text rarely needs raycast
+            text.raycastTarget = false;
 
             // Overflow
             text.overflowMode = TextOverflowModes.Overflow;
@@ -909,6 +911,9 @@ namespace FigmaImporter
             // Explicitly interactive
             if (element.Interactive) return true;
 
+            // TEXT elements: never keep raycast (text is decorative)
+            if (element.FigmaType == "TEXT") return false;
+
             // Check name patterns (case-insensitive)
             if (!string.IsNullOrEmpty(element.Name))
             {
@@ -926,6 +931,20 @@ namespace FigmaImporter
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Check if element has a visible (non-transparent) fill color.
+        /// Empty containers (FRAME/GROUP) with no fill don't need an Image component.
+        /// </summary>
+        static bool HasVisibleFill(ElementData element)
+        {
+            if (element.Style?.Fill == null || element.Style.Fill.Length < 4)
+                return false;
+
+            // Check alpha — if fully transparent, not visible
+            float alpha = element.Style.Fill[3];
+            return alpha > 0.01f;
         }
 
         static void LogEntry(List<BuildLogEntry> log, BuildLogEntry.LogLevel level, string message)

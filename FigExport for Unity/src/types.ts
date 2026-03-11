@@ -154,6 +154,7 @@ export interface ExportOptions {
     includeImages: boolean;
     includeIcons: boolean;
     includeContainers: boolean;
+    slimManifest: boolean; // strip redundant rect/fill for sprite elements
 }
 
 export const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
@@ -161,6 +162,7 @@ export const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
     includeImages: true,
     includeIcons: true,
     includeContainers: true,
+    slimManifest: true,
 };
 
 /** Scale constraint for export. */
