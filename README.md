@@ -49,7 +49,7 @@ figma-to-unity/
 │   ├── dist/                     # Build output (plugin)
 │   └── manifest.json             # Figma plugin manifest
 │
-└── UnityFig Importer/            # Unity Editor Package (C#)
+└── UnityFigImporter/            # Unity Editor Package (C#)
     └── Editor/
         ├── FigmaImporterWindow.cs    # Main EditorWindow (UI + build flow)
         ├── ManifestParser.cs         # JSON → C# objects
@@ -117,17 +117,17 @@ Thêm vào file cấu hình MCP của tool bạn dùng (ví dụ `mcp_config.jso
 
 **Cách 1 — Copy thư mục:**
 ```
-Copy thư mục "UnityFig Importer" vào Assets/ trong Unity project
+Copy thư mục "UnityFigImporter" vào Assets/ trong Unity project
 ```
 
 **Cách 2 — Unity Package Manager (Local):**
 1. Mở **Window** → **Package Manager**
 2. **"+"** → **Add package from disk...**
-3. Chọn file `UnityFig Importer/package.json`
+3. Chọn file `UnityFigImporter/package.json`
 
 **Cách 3 — Git URL:**
 ```
-https://github.com/<user>/figma-to-unity.git?path=UnityFig Importer
+https://github.com/<user>/figma-to-unity.git?path=UnityFigImporter
 ```
 
 ---
