@@ -13,7 +13,10 @@
 - ✅ **Auto Layout → Layout Groups** — Figma auto-layout → Unity HorizontalLayoutGroup / VerticalLayoutGroup
 - ✅ **TextMeshPro** — Text tự động map font, size, color, alignment
 - ✅ **Per-element Merge/Exclude/PNG** — Tuỳ chỉnh từng element trong layer tree
-- ✅ **Hash-based Deduplication** — Tự động loại bỏ PNG trùng lặp
+- ✅ **Hash-based Deduplication** — Tự động loại bỏ PNG trùng lặp (FNV-1a hash)
+- ✅ **Sprite Atlas** — Tự động tạo SpriteAtlas gom các sprite đã import
+- ✅ **Render Pipeline** — Hỗ trợ cả UGUI (Canvas + Image) và 2D Object (SpriteRenderer)
+- ✅ **Flexible Export Scale** — Scale (0.5x → 4x) hoặc Fixed Size (512w, 1024h, ...)
 - ✅ **Minimize Mode** — Thu nhỏ plugin thành thanh trạng thái MCP nhỏ gọn
 
 ---
@@ -28,7 +31,7 @@ figma-to-unity/
 │   │   ├── ui.ts / ui.html       # Plugin UI (layer tree, settings, MCP client)
 │   │   ├── traverser.ts          # DFS node traversal
 │   │   ├── mapper.ts             # Figma constraints → Unity anchors
-│   │   ├── exporter.ts           # PNG export + manifest assembly
+│   │   ├── exporter.ts           # PNG export + manifest + hash dedup
 │   │   ├── naming.ts             # File naming rules
 │   │   └── types.ts              # Type definitions
 │   │
@@ -48,10 +51,11 @@ figma-to-unity/
 │
 └── UnityFig Importer/            # Unity Editor Package (C#)
     └── Editor/
-        ├── FigmaImporterWindow.cs    # Main EditorWindow
+        ├── FigmaImporterWindow.cs    # Main EditorWindow (UI + build flow)
         ├── ManifestParser.cs         # JSON → C# objects
-        ├── TextureImportHelper.cs    # PNG → Sprite import
-        ├── HierarchyBuilder.cs       # Build UI hierarchy
+        ├── TextureImportHelper.cs    # PNG → Sprite import + settings
+        ├── HierarchyBuilder.cs       # Build UI hierarchy (UGUI / Object2D)
+        ├── SpriteAtlasHelper.cs      # Auto SpriteAtlas creation
         └── Data/
             └── ManifestData.cs       # Data model classes
 ```
@@ -138,22 +142,27 @@ https://github.com/<user>/figma-to-unity.git?path=UnityFig Importer
 4. Trong plugin UI:
    - Chuyển tab **Export** để xuất design
    - Chuyển tab **MCP** để xem trạng thái MCP Bridge
-   - Click **▬** để thu nhỏ plugin (hiện thanh trạng thái MCP)
    - Tuỳ chỉnh **Merge / PNG / Exclude** trên từng element
-   - Chọn **Export Scale** (@1x, @2x, @3x, @4x)
+   - Chọn **Export Scale**: 0.5x, 0.75x, 1x, 1.5x, 2x (mặc định), 3x, 4x hoặc Fixed Size (512w, 1024h)
+   - Click **▬** để thu nhỏ plugin (hiện thanh trạng thái MCP)
 5. Click **"Export"** → Download ZIP chứa manifest + PNG assets
 
 ### Import vào Unity
 
-1. Giải nén ZIP vào `Assets/` trong Unity project
+1. Giải nén ZIP vào thư mục bất kỳ
 2. Mở **Window** → **Figma Importer**
-3. Chọn thư mục chứa `manifest.json`
-4. Chọn output mode (Scene / Prefab / Both)
-5. Click **"Build UI"**
+3. Chọn thư mục chứa `manifest.json` (drag & drop hoặc browse)
+4. Cấu hình build options:
+   - **Output Mode**: Scene / Prefab / Both
+   - **Render Pipeline**: UGUI hoặc Object2D
+   - **Canvas Scale**: Auto / 1x / 1.5x / 2x / 3x / 4x / Custom
+   - **Texture Settings**: Max size, compression, filter mode
+   - **Sprite Atlas**: Tự động tạo atlas gom sprites (tuỳ chọn)
+5. Click **"Build UI"** → Unity tự động tạo UI hierarchy
 
 ### MCP Bridge (cho AI Tools)
 
-Khi plugin Figma đang mở, MCP Bridge tự động kết nối qua WebSocket (port 1994). AI tools có thể:
+Khi plugin Figma đang mở, MCP Bridge tự động kết nối qua WebSocket (`ws://localhost:1994/ws`). AI tools có thể:
 - Đọc document tree, selection, styles
 - Export screenshots theo node ID
 - Lấy design context, variables, metadata
