@@ -1,25 +1,76 @@
-# Figma-To-Unity — Export & Import Tool + MCP Bridge
+<p align="center">
+  <h1 align="center">Figma → Unity</h1>
+  <p align="center">
+    Automated Figma-to-Unity UI converter with AI-powered MCP Bridge
+    <br />
+    <strong>🌐 <a href="README.vi.md">Vietnamese</a></strong>
+    <br />
+    <br />
+    <a href="#-quick-start">Quick Start</a>
+    ·
+    <a href="#-features">Features</a>
+    ·
+    <a href="https://github.com/zasuozz-oss/figma-to-unity/issues">Report Bug</a>
+    ·
+    <a href="https://github.com/zasuozz-oss/figma-to-unity/issues">Request Feature</a>
+  </p>
+</p>
 
-**🌐 [Vietnamese](README.vi.md)**
-
-> Automated Figma-to-Unity UI converter. Includes 3 parts: **Figma Plugin** (export + MCP client), **MCP Bridge Server**, and **Unity Editor Importer**.
+<p align="center">
+  <a href="https://github.com/zasuozz-oss/figma-to-unity/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License" /></a>
+  <a href="https://unity.com/"><img src="https://img.shields.io/badge/Unity-2022.3%2B-black?logo=unity" alt="Unity" /></a>
+  <a href="https://www.figma.com/"><img src="https://img.shields.io/badge/Figma-Plugin-F24E1E?logo=figma&logoColor=white" alt="Figma" /></a>
+  <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/Node.js-%3E%3D20-339933?logo=node.js&logoColor=white" alt="Node.js" /></a>
+  <a href="https://modelcontextprotocol.io/"><img src="https://img.shields.io/badge/MCP-Compatible-8B5CF6" alt="MCP" /></a>
+</p>
 
 ---
 
-## ✨ Key Features
+## 📖 Table of Contents
 
-- ✅ **Direct Export from Figma** — Plugin runs inside Figma, select frame → export manifest + PNGs
-- ✅ **Import into Unity** — Editor Window parses manifest, auto-creates UI hierarchy
-- ✅ **Integrated MCP Bridge** — AI tools (Cursor, Antigravity, Claude) read Figma design via MCP protocol
-- ✅ **Dual Mode UI** — Switch between Export mode and MCP mode in one plugin
-- ✅ **Auto Layout → Layout Groups** — Figma auto-layout → Unity HorizontalLayoutGroup / VerticalLayoutGroup
-- ✅ **TextMeshPro** — Text auto-maps font, size, color, alignment
-- ✅ **Per-element Merge/Exclude/PNG** — Customize each element in the layer tree
-- ✅ **Hash-based Deduplication** — Auto-removes duplicate PNGs (FNV-1a hash)
-- ✅ **Sprite Atlas** — Auto-creates SpriteAtlas from imported sprites
-- ✅ **Render Pipeline** — Supports both UGUI (Canvas + Image) and 2D Object (SpriteRenderer)
-- ✅ **Flexible Export Scale** — Scale (0.5x → 4x) or Fixed Size (512w, 1024h, ...)
-- ✅ **Minimize Mode** — Collapse plugin into a compact MCP status bar
+- [Overview](#-overview)
+- [Features](#-features)
+- [Architecture](#-architecture)
+- [Requirements](#-requirements)
+- [Quick Start](#-quick-start)
+- [Usage](#-usage)
+- [Per-Element Controls](#-per-element-controls)
+- [Anchor Mapping](#-constraint--anchor-mapping)
+- [Security](#-security)
+- [Development](#-development)
+- [Contributing](#-contributing)
+- [Credits](#-credits)
+- [License](#-license)
+
+---
+
+## 🔍 Overview
+
+**Figma → Unity** is an end-to-end pipeline that converts Figma designs into Unity UI with minimal manual work. It consists of three components:
+
+| Component | Description |
+|:---|:---|
+| **Figma Plugin** | Runs inside Figma Desktop. Traverses the design tree, exports manifest JSON + PNG assets as a ZIP file. |
+| **MCP Bridge Server** | Stdio-based [Model Context Protocol](https://modelcontextprotocol.io/) server. Allows AI tools (Cursor, Claude, Antigravity) to read Figma design data in real-time via WebSocket. |
+| **Unity Importer** | Editor Window that parses the manifest, imports textures, and builds the complete UI hierarchy automatically. |
+
+---
+
+## ✨ Features
+
+| Category | Feature |
+|:---|:---|
+| **Export** | One-click export from Figma → ZIP (manifest.json + PNGs) |
+| **Import** | Auto-creates full UI hierarchy in Unity from manifest |
+| **AI Integration** | MCP Bridge lets AI tools read Figma design data in real-time |
+| **Layout** | Figma Auto Layout → Unity HorizontalLayoutGroup / VerticalLayoutGroup |
+| **Text** | TextMeshPro with auto font, size, color, alignment mapping |
+| **Deduplication** | FNV-1a hash-based PNG deduplication — skips identical assets |
+| **Sprite Atlas** | Auto-creates SpriteAtlas from imported sprites |
+| **Render Pipeline** | UGUI (Canvas + Image) and 2D Object (SpriteRenderer) |
+| **Scale Options** | 0.5x, 0.75x, 1x, 1.5x, 2x, 3x, 4x or fixed size (512w, 1024h, ...) |
+| **Per-Element** | Merge, Exclude, PNG rasterize controls per node |
+| **Minimize Mode** | Collapse plugin into a compact MCP status bar |
 
 ---
 
@@ -27,57 +78,75 @@
 
 ```
 figma-to-unity/
-├── FigExportForUnity/          # Figma Plugin + MCP Server
-│   ├── src/                      # Plugin source (TypeScript)
-│   │   ├── main.ts               # Plugin entry point (Figma sandbox)
-│   │   ├── ui.ts / ui.html       # Plugin UI (layer tree, settings, MCP client)
-│   │   ├── traverser.ts          # DFS node traversal
-│   │   ├── mapper.ts             # Figma constraints → Unity anchors
-│   │   ├── exporter.ts           # PNG export + manifest + hash dedup
-│   │   ├── naming.ts             # File naming rules
-│   │   └── types.ts              # Type definitions
+├── FigExportForUnity/                # Figma Plugin + MCP Server
+│   ├── src/                          # Plugin source (TypeScript)
+│   │   ├── main.ts                   # Plugin entry (Figma sandbox)
+│   │   ├── ui.ts / ui.html           # Plugin UI (layer tree, settings)
+│   │   ├── traverser.ts              # DFS node traversal
+│   │   ├── mapper.ts                 # Constraints → Unity anchors
+│   │   ├── exporter.ts               # PNG export + manifest + hash dedup
+│   │   ├── naming.ts                 # File naming rules
+│   │   └── types.ts                  # Type definitions
 │   │
-│   ├── server/                   # MCP Bridge Server (TypeScript)
+│   ├── server/                       # MCP Bridge Server
 │   │   └── src/
-│   │       ├── index.ts          # Server entry point (stdio transport)
-│   │       ├── leader.ts         # HTTP server + WebSocket bridge
-│   │       ├── follower.ts       # Proxy to leader via HTTP
-│   │       ├── election.ts       # Leader/follower election
-│   │       ├── bridge.ts         # WebSocket bridge to Figma plugin
-│   │       ├── tools.ts          # MCP tool implementations
-│   │       ├── schema.ts         # Zod input validation
-│   │       └── types.ts          # Shared types
+│   │       ├── index.ts              # Stdio transport entry
+│   │       ├── leader.ts             # HTTP + WebSocket bridge
+│   │       ├── follower.ts           # Proxy to leader
+│   │       ├── election.ts           # Leader/follower election
+│   │       ├── bridge.ts             # WebSocket ↔ Figma plugin
+│   │       ├── tools.ts              # MCP tool definitions
+│   │       ├── schema.ts             # Zod validation
+│   │       └── types.ts              # Shared types
 │   │
-│   ├── dist/                     # Build output (plugin)
-│   └── manifest.json             # Figma plugin manifest
+│   ├── dist/                         # Build output
+│   └── manifest.json                 # Figma plugin manifest
 │
-└── UnityFigImporter/             # Unity Editor Package (C#)
+└── UnityFigImporter/                 # Unity Editor Package (C#)
     └── Editor/
-        ├── FigmaImporterWindow.cs    # Main EditorWindow (UI + build flow)
-        ├── ManifestParser.cs         # JSON → C# objects
-        ├── TextureImportHelper.cs    # PNG → Sprite import + settings
-        ├── HierarchyBuilder.cs       # Build UI hierarchy (UGUI / Object2D)
-        ├── SpriteAtlasHelper.cs      # Auto SpriteAtlas creation
+        ├── FigmaImporterWindow.cs    # Main EditorWindow
+        ├── ManifestParser.cs         # JSON → C# data
+        ├── TextureImportHelper.cs    # PNG → Sprite import
+        ├── HierarchyBuilder.cs       # UI hierarchy builder
+        ├── SpriteAtlasHelper.cs      # Auto SpriteAtlas
         └── Data/
-            └── ManifestData.cs       # Data model classes
+            └── ManifestData.cs       # Data models
 ```
 
 ---
 
-## 📦 Installation
+## 📋 Requirements
 
-### Requirements
+### Figma Plugin & MCP Server
 
-| Component | Version |
-|:---|:---|
-| **Figma Desktop** | Latest |
-| **Unity** | 2022.3+ LTS |
-| **TextMeshPro** | Installed via Package Manager |
-| **Newtonsoft JSON** | Installed via Package Manager |
-| **Node.js** | >= 20 (to build plugin + server) |
-| **Bun** (optional) | >= 1.0 (faster server builds) |
+| Dependency | Version | Notes |
+|:---|:---|:---|
+| **Node.js** | `>= 20.0.0` | Required for build and MCP server |
+| **npm** | `>= 9` | Comes with Node.js |
+| **Bun** *(optional)* | `>= 1.0` | Faster alternative for server builds |
+| **Figma Desktop** | Latest | Plugin does not work in Figma web |
 
-### Step 1: Build Figma Plugin
+### Unity Importer
+
+| Dependency | Version | Notes |
+|:---|:---|:---|
+| **Unity** | `2022.3+` LTS | Tested on 2022.3 and 6000.x |
+| **TextMeshPro** | `3.0.6+` | `com.unity.textmeshpro` via Package Manager |
+| **Newtonsoft JSON** | `3.2.1+` | `com.unity.nuget.newtonsoft-json` via Package Manager |
+| **SpriteAtlas** *(optional)* | Built-in | For auto atlas generation |
+
+### MCP Client (AI Tool)
+
+Any AI tool supporting [Model Context Protocol](https://modelcontextprotocol.io/) stdio transport:
+- **Cursor** — via `.cursor/mcp.json`
+- **Claude Desktop** — via `claude_desktop_config.json`
+- **Antigravity** — via `mcp_config.json`
+
+---
+
+## 🚀 Quick Start
+
+### 1. Build Figma Plugin
 
 ```bash
 cd FigExportForUnity
@@ -85,100 +154,94 @@ npm install
 npm run build
 ```
 
-In Figma Desktop:
+Then in Figma Desktop:
 1. **Plugins** → **Development** → **Import plugin from manifest...**
 2. Select `FigExportForUnity/manifest.json`
-3. Plugin will appear in the Plugins menu
 
-### Step 2: Build MCP Bridge Server
+### 2. Build MCP Bridge Server
 
 ```bash
 cd FigExportForUnity/server
-bun install    # or npm install
-bun run build  # or npx tsc
+npm install       # or: bun install
+npx tsc           # or: bun run build
 ```
 
-### Step 3: Configure MCP for your AI Tool
+### 3. Configure MCP Client
 
-Add to your tool's MCP config file (e.g. `mcp_config.json`):
+Add to your AI tool's MCP config:
 
 ```json
 {
   "mcpServers": {
     "figma-bridge": {
       "command": "node",
-      "args": ["<path-to-repo>/FigExportForUnity/server/dist/index.js"]
+      "args": ["<absolute-path>/FigExportForUnity/server/dist/index.js"]
     }
   }
 }
 ```
 
-> **Note:** Replace `<path-to-repo>` with the absolute path to this repo on your machine.
+> Replace `<absolute-path>` with the full path to this repo on your machine.
 
-### Step 4: Install Unity Importer
+### 4. Install Unity Importer
 
-**Option 1 — Copy folder:**
-```
-Copy the "UnityFigImporter" folder into Assets/ in your Unity project
-```
-
-**Option 2 — Unity Package Manager (Local):**
-1. Open **Window** → **Package Manager**
-2. **"+"** → **Add package from disk...**
-3. Select `UnityFigImporter/package.json`
-
-**Option 3 — Git URL:**
+**Option A — Git URL (recommended):**
 ```
 https://github.com/zasuozz-oss/figma-to-unity.git?path=UnityFigImporter
 ```
 
+**Option B — Local Package:**
+1. **Window** → **Package Manager** → **"+"** → **Add package from disk...**
+2. Select `UnityFigImporter/package.json`
+
+**Option C — Manual:**
+Copy `UnityFigImporter/` into your Unity project's `Assets/` folder.
+
 ---
 
-## 🚀 Usage
+## 📖 Usage
 
 ### Export from Figma
 
-1. Open your design in Figma Desktop
-2. **Select the Frame** to export
-3. Run the plugin: **Plugins** → **Figma to Unity**
-4. In the plugin UI:
-   - Switch to **Export** tab to export design
-   - Switch to **MCP** tab to view MCP Bridge status
-   - Customize **Merge / PNG / Exclude** per element
-   - Choose **Export Scale**: 0.5x, 0.75x, 1x, 1.5x, 2x (default), 3x, 4x or Fixed Size (512w, 1024h)
-   - Click **▬** to minimize plugin (shows MCP status bar)
-5. Click **"Export"** → Downloads ZIP containing manifest + PNG assets
+1. Select the **Frame** you want to export
+2. Run **Plugins** → **Figma to Unity**
+3. Configure per-element settings (Merge / PNG / Exclude)
+4. Choose **Export Scale** (0.5x – 4x or fixed size)
+5. Click **Export** → Downloads a ZIP file
 
 ### Import into Unity
 
-1. Unzip the ZIP file into any folder
+1. Unzip the exported file
 2. Open **Window** → **Figma Importer**
-3. Select the folder containing `manifest.json` (drag & drop or browse)
-4. Configure build options:
-   - **Output Mode**: Scene / Prefab / Both
-   - **Render Pipeline**: UGUI or Object2D
-   - **Canvas Scale**: Auto / 1x / 1.5x / 2x / 3x / 4x / Custom
-   - **Texture Settings**: Max size, compression, filter mode
-   - **Sprite Atlas**: Auto-create atlas from sprites (optional)
-5. Click **"Build UI"** → Unity auto-creates the UI hierarchy
+3. Select the folder containing `manifest.json`
+4. Configure:
 
-### MCP Bridge (for AI Tools)
+| Option | Values | Default |
+|:---|:---|:---|
+| **Output Mode** | Scene / Prefab / Both | Scene |
+| **Render Pipeline** | UGUI / Object2D | UGUI |
+| **Canvas Scale** | Auto / 1x / 1.5x / 2x / 3x / 4x / Custom | Auto |
+| **Sprite Atlas** | On / Off | Off |
 
-When the Figma plugin is open, MCP Bridge auto-connects via WebSocket (`ws://localhost:1994/ws`). AI tools can:
-- Read document tree, selection, styles
+5. Click **Build UI**
+
+### MCP Bridge (AI Tools)
+
+When the Figma plugin is open, MCP Bridge connects via `ws://localhost:1994/ws`. AI tools can:
+- Read document tree, selection, styles, variables
 - Export screenshots by node ID
-- Get design context, variables, metadata
+- Get design context and metadata
 
 ---
 
-## 🔧 Per-Element Features
+## 🔧 Per-Element Controls
 
 | Button | Function |
 |:---|:---|
 | **Merge** | Flatten parent + children into a single PNG |
-| **PNG** (text) | Rasterize TEXT as PNG instead of TextMeshPro |
-| **×** (exclude) | Skip element, don't export |
-| **👁** (visibility) | Show/hide element in Figma |
+| **PNG** | Rasterize text node as PNG instead of TextMeshPro |
+| **×** | Exclude element from export |
+| **👁** | Toggle visibility in Figma |
 
 ---
 
@@ -186,39 +249,51 @@ When the Figma plugin is open, MCP Bridge auto-connects via WebSocket (`ws://loc
 
 | Figma Constraint | Unity Anchor |
 |:---|:---|
-| `LEFT` | anchorMin.x = 0, anchorMax.x = 0 |
-| `RIGHT` | anchorMin.x = 1, anchorMax.x = 1 |
-| `CENTER` | anchorMin.x = 0.5, anchorMax.x = 0.5 |
-| `LEFT_RIGHT` (scale) | anchorMin.x = 0, anchorMax.x = 1 |
-| `TOP` | anchorMin.y = 1, anchorMax.y = 1 |
-| `BOTTOM` | anchorMin.y = 0, anchorMax.y = 0 |
-| `TOP_BOTTOM` (scale) | anchorMin.y = 0, anchorMax.y = 1 |
+| `LEFT` | `anchorMin.x = 0, anchorMax.x = 0` |
+| `RIGHT` | `anchorMin.x = 1, anchorMax.x = 1` |
+| `CENTER` | `anchorMin.x = 0.5, anchorMax.x = 0.5` |
+| `LEFT_RIGHT` | `anchorMin.x = 0, anchorMax.x = 1` |
+| `TOP` | `anchorMin.y = 1, anchorMax.y = 1` |
+| `BOTTOM` | `anchorMin.y = 0, anchorMax.y = 0` |
+| `TOP_BOTTOM` | `anchorMin.y = 0, anchorMax.y = 1` |
 
 ---
 
 ## 🔒 Security
 
-- Server only binds to `localhost:1994` — not exposed to the network
-- File writes have path traversal protection + exclusive write flag
-- Input validation (Zod) for all MCP tool calls
+- Server binds to `localhost:1994` only — not exposed to the network
+- Path traversal protection + exclusive write flag on file operations
+- Input validation via [Zod](https://zod.dev/) for all MCP tool calls
 - No `eval()`, `exec()`, or hardcoded secrets
 
 ---
 
 ## 📝 Development
 
-### Build Figma Plugin
 ```bash
+# Figma Plugin — build once
 cd FigExportForUnity
-npm run build        # Build once
-npm run watch        # Watch mode (auto-rebuild)
+npm run build
+
+# Figma Plugin — watch mode (auto-rebuild on save)
+npm run watch
+
+# MCP Server — build
+cd FigExportForUnity/server
+npx tsc
 ```
 
-### Build MCP Server
-```bash
-cd FigExportForUnity/server
-bun run build        # TypeScript → JavaScript
-```
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ---
 
@@ -230,4 +305,4 @@ bun run build        # TypeScript → JavaScript
 
 ## 📝 License
 
-MIT License
+This project is licensed under the [MIT License](LICENSE).
