@@ -76,6 +76,17 @@ function sendSelectionInfo(): void {
         // Check locked status from Figma node
         var figmaNode = figma.getNodeById(el.id) as SceneNode | null;
         var isLocked = figmaNode && 'locked' in figmaNode ? (figmaNode as any).locked : false;
+        // Check if element has gradient fills
+        var hasGradient = false;
+        if (Array.isArray(el.fills)) {
+            for (var f = 0; f < el.fills.length; f++) {
+                var fillType = (el.fills[f] as any).type;
+                if (fillType && fillType.indexOf('GRADIENT') === 0) {
+                    hasGradient = true;
+                    break;
+                }
+            }
+        }
         return {
             id: el.id,
             name: el.name,
@@ -85,6 +96,7 @@ function sendSelectionInfo(): void {
             cornerRadius: el.cornerRadius,
             hasAsset: el.exportable,
             hasChildren: el.children.length > 0,
+            hasGradient: hasGradient,
             locked: isLocked,
             visible: el.visible,
         };

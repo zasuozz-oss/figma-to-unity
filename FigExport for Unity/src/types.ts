@@ -193,6 +193,7 @@ export interface TreeElement {
     cornerRadius: number;
     hasAsset: boolean;
     hasChildren: boolean;
+    hasGradient: boolean;
 }
 
 // ---------------------------------------------------------------------------

@@ -475,6 +475,7 @@ function initTreeState(tree: any[]) {
         // or any element with cornerRadius > 0
         var containerTypes = ['FRAME', 'GROUP', 'RECTANGLE', 'COMPONENT', 'INSTANCE'];
         var isCandidate = nineSliceEnabled
+            && !el.hasGradient
             && el.size.w > 64 && el.size.h > 64
             && (containerTypes.indexOf(el.figmaType) >= 0 || el.cornerRadius > 0);
 
@@ -789,7 +790,8 @@ function reDetectNineSlice() {
     var containerTypes = ['FRAME', 'GROUP', 'RECTANGLE', 'COMPONENT', 'INSTANCE'];
     for (var i = 0; i < currentTree.length; i++) {
         var el = currentTree[i];
-        var isCandidate = el.size.w > 64 && el.size.h > 64
+        var isCandidate = !el.hasGradient
+            && el.size.w > 64 && el.size.h > 64
             && (containerTypes.indexOf(el.figmaType) >= 0 || el.cornerRadius > 0);
         treeState[i].nineSlice = isCandidate;
         treeState[i].nineSliceAutoDetected = isCandidate;
@@ -966,6 +968,7 @@ function renderTree() {
         // 9S filter — show visible (not excluded) elements that are 9-slice candidates
         if (filter9sActive) {
             var is9sCandidate = !state.excluded
+                && !el.hasGradient
                 && el.size.w > 64 && el.size.h > 64
                 && (['FRAME', 'GROUP', 'RECTANGLE', 'COMPONENT', 'INSTANCE'].indexOf(el.figmaType) >= 0 || el.cornerRadius > 0);
             if (!is9sCandidate) continue;
@@ -1034,9 +1037,10 @@ function renderTree() {
 
         // 9S button for non-TEXT elements that are candidates (container types > 64px or cornerRadius > 0 or already active)
         if (el.figmaType !== 'TEXT') {
-            var isNsCandidate = (el.size.w > 64 && el.size.h > 64
-                && ['FRAME', 'GROUP', 'RECTANGLE', 'COMPONENT', 'INSTANCE'].indexOf(el.figmaType) >= 0)
-                || el.cornerRadius > 0
+            var isNsCandidate = !el.hasGradient
+                && ((el.size.w > 64 && el.size.h > 64
+                    && ['FRAME', 'GROUP', 'RECTANGLE', 'COMPONENT', 'INSTANCE'].indexOf(el.figmaType) >= 0)
+                    || el.cornerRadius > 0)
                 || state.nineSlice;
             if (isNsCandidate) {
                 var nsClass = 'tree-9s-btn';
