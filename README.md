@@ -1,6 +1,6 @@
 # Figma-To-Unity — Export & Import Tool + MCP Bridge
 
-**🌐 [Tiếng Việt](README.vi.md)**
+**🌐 [Vietnamese](README.vi.md)**
 
 > Automated Figma-to-Unity UI converter. Includes 3 parts: **Figma Plugin** (export + MCP client), **MCP Bridge Server**, and **Unity Editor Importer**.
 
