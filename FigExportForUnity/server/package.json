@@ -24,7 +24,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/zasuozz-oss/figma-to-unity.git",
-    "directory": "FigExport for Unity/server"
+    "directory": "FigExportForUnity/server"
   },
   "homepage": "https://github.com/zasuozz-oss/figma-to-unity#readme",
   "bugs": {

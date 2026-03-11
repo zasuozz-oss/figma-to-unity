@@ -27,7 +27,7 @@
 
 ```
 figma-to-unity/
-├── FigExport for Unity/          # Figma Plugin + MCP Server
+├── FigExportForUnity/          # Figma Plugin + MCP Server
 │   ├── src/                      # Plugin source (TypeScript)
 │   │   ├── main.ts               # Plugin entry point (Figma sandbox)
 │   │   ├── ui.ts / ui.html       # Plugin UI (layer tree, settings, MCP client)
@@ -80,20 +80,20 @@ figma-to-unity/
 ### Step 1: Build Figma Plugin
 
 ```bash
-cd "FigExport for Unity"
+cd FigExportForUnity
 npm install
 npm run build
 ```
 
 In Figma Desktop:
 1. **Plugins** → **Development** → **Import plugin from manifest...**
-2. Select `FigExport for Unity/manifest.json`
+2. Select `FigExportForUnity/manifest.json`
 3. Plugin will appear in the Plugins menu
 
 ### Step 2: Build MCP Bridge Server
 
 ```bash
-cd "FigExport for Unity/server"
+cd FigExportForUnity/server
 bun install    # or npm install
 bun run build  # or npx tsc
 ```
@@ -107,7 +107,7 @@ Add to your tool's MCP config file (e.g. `mcp_config.json`):
   "mcpServers": {
     "figma-bridge": {
       "command": "node",
-      "args": ["<path-to-repo>/FigExport for Unity/server/dist/index.js"]
+      "args": ["<path-to-repo>/FigExportForUnity/server/dist/index.js"]
     }
   }
 }
@@ -209,14 +209,14 @@ When the Figma plugin is open, MCP Bridge auto-connects via WebSocket (`ws://loc
 
 ### Build Figma Plugin
 ```bash
-cd "FigExport for Unity"
+cd FigExportForUnity
 npm run build        # Build once
 npm run watch        # Watch mode (auto-rebuild)
 ```
 
 ### Build MCP Server
 ```bash
-cd "FigExport for Unity/server"
+cd FigExportForUnity/server
 bun run build        # TypeScript → JavaScript
 ```
 
