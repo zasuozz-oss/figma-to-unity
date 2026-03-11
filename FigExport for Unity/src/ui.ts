@@ -96,16 +96,10 @@ previewLockBtn.addEventListener('click', function () {
     }
 });
 
-// 9-Slice global toggle
+// 9-Slice global toggle (also triggers re-detect)
 var nineSliceToggleBtn = document.getElementById('nine-slice-toggle')!;
 nineSliceToggleBtn.addEventListener('click', function () {
     toggleGlobalNineSlice();
-});
-
-// 9-Slice re-detect
-var nineSliceRedetectBtn = document.getElementById('nine-slice-redetect')!;
-nineSliceRedetectBtn.addEventListener('click', function () {
-    reDetectNineSlice();
 });
 
 // Reload button
@@ -466,10 +460,11 @@ function initTreeState(tree: any[]) {
         // Root (depth 0) expanded, all other containers collapsed by default
         var defaultCollapsed = el.hasChildren && el.depth > 0;
 
-        // Auto-detect 9-slice candidates:
+        // Auto-detect 9-slice candidates (only when global 9S is enabled):
         // Must have cornerRadius > 0, both dimensions > 64px, and be a container type
         var containerTypes = ['FRAME', 'RECTANGLE', 'COMPONENT', 'INSTANCE'];
-        var isCandidate = el.cornerRadius > 0
+        var isCandidate = nineSliceEnabled
+            && el.cornerRadius > 0
             && el.size.w > 64 && el.size.h > 64
             && containerTypes.indexOf(el.figmaType) >= 0;
 
