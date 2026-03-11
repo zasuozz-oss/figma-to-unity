@@ -479,15 +479,15 @@ function initTreeState(tree: any[]) {
         var defaultCollapsed = el.hasChildren && el.depth > 0;
 
         // Auto-detect 9-slice candidates (only when global 9S is enabled):
-        // Leaf elements (no children) that are shape/container types with size > 64px
+        // Leaf elements (no children) that are shape types with size > 32px
         // or any leaf element with cornerRadius > 0
         // Elements WITH children are containers (bg, frame) — NOT 9S candidates
-        var candidateTypes = ['FRAME', 'GROUP', 'RECTANGLE', 'COMPONENT', 'INSTANCE'];
+        var candidateTypes = ['FRAME', 'GROUP', 'RECTANGLE', 'COMPONENT', 'INSTANCE', 'VECTOR', 'ELLIPSE', 'LINE', 'STAR', 'POLYGON', 'BOOLEAN_OPERATION'];
         var isCandidate = nineSliceEnabled
             && el.depth > 0
             && !el.hasChildren
             && !el.hasGradient
-            && el.size.w > 64 && el.size.h > 64
+            && el.size.w > 32 && el.size.h > 32
             && (candidateTypes.indexOf(el.figmaType) >= 0 || el.cornerRadius > 0);
 
         treeState.push({
@@ -799,13 +799,13 @@ function toggleGlobalNineSlice() {
 
 function reDetectNineSlice() {
     // Same logic as initTreeState — only leaf elements without children
-    var candidateTypes = ['FRAME', 'GROUP', 'RECTANGLE', 'COMPONENT', 'INSTANCE'];
+    var candidateTypes = ['FRAME', 'GROUP', 'RECTANGLE', 'COMPONENT', 'INSTANCE', 'VECTOR', 'ELLIPSE', 'LINE', 'STAR', 'POLYGON', 'BOOLEAN_OPERATION'];
     for (var i = 0; i < currentTree.length; i++) {
         var el = currentTree[i];
         var isCandidate = el.depth > 0
             && !el.hasChildren
             && !el.hasGradient
-            && el.size.w > 64 && el.size.h > 64
+            && el.size.w > 32 && el.size.h > 32
             && (candidateTypes.indexOf(el.figmaType) >= 0 || el.cornerRadius > 0);
         treeState[i].nineSlice = isCandidate;
         treeState[i].nineSliceAutoDetected = isCandidate;
@@ -983,8 +983,8 @@ function renderTree() {
         if (filter9sActive) {
             var is9sCandidate = !state.excluded
                 && !el.hasGradient
-                && el.size.w > 64 && el.size.h > 64
-                && (['FRAME', 'GROUP', 'RECTANGLE', 'COMPONENT', 'INSTANCE'].indexOf(el.figmaType) >= 0 || el.cornerRadius > 0);
+                && el.size.w > 32 && el.size.h > 32
+                && (['FRAME', 'GROUP', 'RECTANGLE', 'COMPONENT', 'INSTANCE', 'VECTOR', 'ELLIPSE', 'LINE', 'STAR', 'POLYGON', 'BOOLEAN_OPERATION'].indexOf(el.figmaType) >= 0 || el.cornerRadius > 0);
             if (!is9sCandidate) continue;
         }
 
@@ -1052,8 +1052,8 @@ function renderTree() {
         // 9S button for non-TEXT elements that are candidates (container types > 64px or cornerRadius > 0 or already active)
         if (el.figmaType !== 'TEXT') {
             var isNsCandidate = !el.hasGradient
-                && ((el.size.w > 64 && el.size.h > 64
-                    && ['FRAME', 'GROUP', 'RECTANGLE', 'COMPONENT', 'INSTANCE'].indexOf(el.figmaType) >= 0)
+                && ((el.size.w > 32 && el.size.h > 32
+                    && ['FRAME', 'GROUP', 'RECTANGLE', 'COMPONENT', 'INSTANCE', 'VECTOR', 'ELLIPSE', 'LINE', 'STAR', 'POLYGON', 'BOOLEAN_OPERATION'].indexOf(el.figmaType) >= 0)
                     || el.cornerRadius > 0)
                 || state.nineSlice;
             if (isNsCandidate) {
