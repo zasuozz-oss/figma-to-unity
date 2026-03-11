@@ -395,7 +395,12 @@ namespace FigmaImporter
                 if (sprite != null)
                 {
                     image.sprite = sprite;
-                    image.type = Image.Type.Simple;
+
+                    // Use Sliced type for 9-slice elements (exported @1x with spriteBorder)
+                    if (element.NineSlice != null && element.NineSlice.Border != null)
+                        image.type = Image.Type.Sliced;
+                    else
+                        image.type = Image.Type.Simple;
 
                     RectTransform rt = go.GetComponent<RectTransform>();
                     bool isStretchH = !Mathf.Approximately(rt.anchorMin.x, rt.anchorMax.x);

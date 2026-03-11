@@ -103,6 +103,9 @@ namespace FigmaImporter.Data
 
         [JsonProperty("autoLayout")]
         public AutoLayoutData AutoLayout;
+
+        [JsonProperty("nineSlice")]
+        public NineSliceData NineSlice;
     }
 
     [Serializable]
@@ -131,6 +134,16 @@ namespace FigmaImporter.Data
 
         [JsonProperty("counterAxisAlignItems")]
         public string CounterAxisAlignItems;
+    }
+
+    [Serializable]
+    public class NineSliceData
+    {
+        [JsonProperty("border")]
+        public float[] Border; // [left, bottom, right, top]
+
+        [JsonProperty("exportScale")]
+        public float ExportScale;
     }
 
     [Serializable]

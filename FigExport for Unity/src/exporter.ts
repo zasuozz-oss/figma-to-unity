@@ -17,6 +17,7 @@ import type {
     ExportOptions,
     ExportScale,
     ElementConfig,
+    NineSliceData,
 } from './types';
 import { DEFAULT_EXPORT_OPTIONS, DEFAULT_EXPORT_SCALE } from './types';
 import { traverseNode } from './traverser';
@@ -46,10 +47,12 @@ export async function exportDesign(
     const excludeSet = new Set<string>();
     const mergeSet = new Set<string>();
     const exportAsPngSet = new Set<string>();
+    const nineSliceSet = new Set<string>();
     for (var i = 0; i < configs.length; i++) {
         if (configs[i].excluded) excludeSet.add(configs[i].id);
         if (configs[i].merge) mergeSet.add(configs[i].id);
         if (configs[i].exportAsPng) exportAsPngSet.add(configs[i].id);
+        if (configs[i].nineSlice) nineSliceSet.add(configs[i].id);
     }
 
     // Build merged-children set (children of merged parents get skipped)
@@ -101,7 +104,7 @@ export async function exportDesign(
 
     // Step 3: Build manifest elements + collect assets to export
     const elements: ElementData[] = [];
-    const assetsToExport: { element: FigmaElement; fileName: string; isMerged: boolean }[] = [];
+    const assetsToExport: { element: FigmaElement; fileName: string; isMerged: boolean; isNineSlice: boolean }[] = [];
     const fontMap = new Map<string, Set<string>>();
     const scaleNum = scale.type === 'SCALE' ? scale.value : 1;
 
@@ -159,7 +162,10 @@ export async function exportDesign(
         if (shouldExportPng) {
             var fileName = generateFileName(el, scaleNum, rootNode.name);
             assetFile = fileName;
-            assetsToExport.push({ element: el, fileName: fileName, isMerged: isMerged });
+            assetsToExport.push({
+                element: el, fileName: fileName, isMerged: isMerged,
+                isNineSlice: nineSliceSet.has(el.id),
+            });
 
             // Ensure elements with asset always have Image component
             if (components.indexOf('Image') < 0 && el.type !== 'TEXT') {
@@ -207,6 +213,17 @@ export async function exportDesign(
             elementText = undefined;
         }
 
+        // Compute 9-slice metadata if element is marked for 9-slice
+        var nineSliceData: NineSliceData | undefined;
+        if (nineSliceSet.has(el.id) && shouldExportPng) {
+            var cr = el.cornerRadius;
+            // Border: left, bottom, right, top — all equal to cornerRadius
+            nineSliceData = {
+                border: [cr, cr, cr, cr],
+                exportScale: 1,
+            };
+        }
+
         elements.push({
             id: el.id,
             name: el.name,
@@ -222,6 +239,7 @@ export async function exportDesign(
             children: childrenIds,
             merged: isMerged || undefined,
             autoLayout: el.autoLayout || undefined,
+            nineSlice: nineSliceData,
         });
     }
 
@@ -238,7 +256,8 @@ export async function exportDesign(
 
     for (var i = 0; i < assetsToExport.length; i++) {
         var item = assetsToExport[i];
-        if (onProgress) onProgress(i + 1, total, 'Exporting: ' + item.element.name + (item.isMerged ? ' (merged)' : ''));
+        var nineSliceLabel = item.isNineSlice ? ' (9-slice @1x)' : '';
+        if (onProgress) onProgress(i + 1, total, 'Exporting: ' + item.element.name + (item.isMerged ? ' (merged)' : '') + nineSliceLabel);
 
         try {
             var node = figma.getNodeById(item.element.id);
@@ -256,11 +275,17 @@ export async function exportDesign(
                     );
                 }
 
+                // 9-slice elements export at @1x (design size) to save memory
+                // Unity will stretch them with Image.Type.Sliced
+                var exportScale = item.isNineSlice
+                    ? { type: 'SCALE' as const, value: 1 }
+                    : scale;
+
                 var bytes: Uint8Array;
                 try {
                     bytes = await (node as ExportMixin).exportAsync({
                         format: 'PNG',
-                        constraint: { type: scale.type, value: scale.value },
+                        constraint: { type: exportScale.type, value: exportScale.value },
                     });
                 } finally {
                     // Restore visibility

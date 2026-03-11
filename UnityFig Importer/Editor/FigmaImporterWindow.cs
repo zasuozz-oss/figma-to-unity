@@ -64,6 +64,9 @@ namespace FigmaImporter
         SpriteAtlasSettings _atlasSettings = new SpriteAtlasSettings();
         bool _showAtlasSettings;
 
+        // Main scroll position for entire window
+        Vector2 _mainScrollPosition;
+
         // Hierarchy preview
         bool _showHierarchy = true;
         Vector2 _hierarchyScroll;
@@ -209,6 +212,8 @@ namespace FigmaImporter
 
         void OnGUI()
         {
+            _mainScrollPosition = EditorGUILayout.BeginScrollView(_mainScrollPosition);
+
             EditorGUILayout.Space(4);
 
             // Header
@@ -225,6 +230,7 @@ namespace FigmaImporter
                 {
                     EditorGUILayout.HelpBox(_manifestError, MessageType.Error);
                 }
+                EditorGUILayout.EndScrollView();
                 return;
             }
 
@@ -276,7 +282,10 @@ namespace FigmaImporter
             // Sprite Atlas settings
             DrawSpriteAtlasSettings();
 
-            EditorGUILayout.Space(8);
+            EditorGUILayout.EndScrollView();
+
+            // ── Fixed bottom section (outside scroll) ──
+            EditorGUILayout.Space(4);
 
             // Build button
             DrawBuildButton();
@@ -931,7 +940,6 @@ namespace FigmaImporter
                         _buildProgressLabel = "Creating Sprite Atlas...";
                         Repaint();
 
-                        string screenName = _manifest.Screen?.Name ?? "FigmaImport";
                         var atlas = SpriteAtlasHelper.CreateAtlas(
                             targetFolder, screenName, _atlasSettings, _textureSettings);
 

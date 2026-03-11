@@ -17,6 +17,8 @@ interface TreeNodeState {
     excluded: boolean;
     merge: boolean;
     exportAsPng: boolean;
+    nineSlice: boolean;
+    nineSliceAutoDetected: boolean;
     collapsed: boolean;
     hasChildren: boolean;
     parentId: string | null;
@@ -166,7 +168,7 @@ exportBtnEl.addEventListener('click', function () {
     logEl.textContent = '';
 
     var configs = treeState.map(function (s) {
-        return { id: s.id, excluded: s.excluded, merge: s.merge, exportAsPng: s.exportAsPng };
+        return { id: s.id, excluded: s.excluded, merge: s.merge, exportAsPng: s.exportAsPng, nineSlice: s.nineSlice, nineSliceAutoDetected: s.nineSliceAutoDetected };
     });
 
     parent.postMessage({
@@ -451,11 +453,20 @@ function initTreeState(tree: any[]) {
         // Root (depth 0) expanded, all other containers collapsed by default
         var defaultCollapsed = el.hasChildren && el.depth > 0;
 
+        // Auto-detect 9-slice candidates:
+        // Must have cornerRadius > 0, both dimensions > 64px, and be a container type
+        var containerTypes = ['FRAME', 'RECTANGLE', 'COMPONENT', 'INSTANCE'];
+        var isCandidate = el.cornerRadius > 0
+            && el.size.w > 64 && el.size.h > 64
+            && containerTypes.indexOf(el.figmaType) >= 0;
+
         treeState.push({
             id: el.id,
             excluded: !el.visible, // Auto-exclude hidden elements
             merge: !!el.locked,
             exportAsPng: false,
+            nineSlice: isCandidate,
+            nineSliceAutoDetected: isCandidate,
             collapsed: defaultCollapsed,
             hasChildren: el.hasChildren,
             parentId: parentId,
@@ -550,6 +561,7 @@ function resetAll() {
         }
         treeState[i].excluded = false;
         treeState[i].merge = false;
+        treeState[i].nineSlice = treeState[i].nineSliceAutoDetected;
         if (i > 0) treeState[i].collapsed = true;
     }
     updateMergedChildren();
@@ -719,6 +731,16 @@ function toggleExportAsPng(id: string) {
     for (var i = 0; i < treeState.length; i++) {
         if (treeState[i].id === id) {
             treeState[i].exportAsPng = !treeState[i].exportAsPng;
+            break;
+        }
+    }
+    renderTree();
+}
+
+function toggleNineSlice(id: string) {
+    for (var i = 0; i < treeState.length; i++) {
+        if (treeState[i].id === id) {
+            treeState[i].nineSlice = !treeState[i].nineSlice;
             break;
         }
     }
@@ -953,6 +975,16 @@ function renderTree() {
             html += '</button>';
         }
 
+        // 9S button for non-TEXT exportable elements
+        if (el.figmaType !== 'TEXT' && el.hasAsset) {
+            var nsClass = 'tree-9s-btn';
+            if (state.nineSlice) nsClass += ' active';
+            if (state.nineSliceAutoDetected && state.nineSlice) nsClass += ' auto';
+            html += '<button class="' + nsClass + '" data-9s-id="' + el.id + '" title="9-Slice: export @1x + apply border">';
+            html += '9S';
+            html += '</button>';
+        }
+
         // Merge button
         var mergeClass = 'tree-merge-btn';
         if (el.hasChildren) mergeClass += ' show';
@@ -991,6 +1023,13 @@ function renderTree() {
         btn.addEventListener('click', function (e) {
             e.stopPropagation();
             toggleExportAsPng((this as HTMLElement).getAttribute('data-png-id')!);
+        });
+    });
+
+    treePanelEl.querySelectorAll('[data-9s-id]').forEach(function (btn) {
+        btn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            toggleNineSlice((this as HTMLElement).getAttribute('data-9s-id')!);
         });
     });
 

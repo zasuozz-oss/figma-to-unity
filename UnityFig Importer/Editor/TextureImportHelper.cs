@@ -153,7 +153,20 @@ namespace FigmaImporter
                     var importer = AssetImporter.GetAtPath(assetPath) as TextureImporter;
                     if (importer != null)
                     {
-                        ConfigureSpriteImporter(importer, fileName, cornerRadiusLookup, applyNineSlice, texSettings);
+                        // Look up nineSlice data for this file
+                        NineSliceData nineSlice = null;
+                        if (manifest?.Elements != null)
+                        {
+                            foreach (var el in manifest.Elements)
+                            {
+                                if (el.Asset == fileName && el.NineSlice != null)
+                                {
+                                    nineSlice = el.NineSlice;
+                                    break;
+                                }
+                            }
+                        }
+                        ConfigureSpriteImporter(importer, fileName, cornerRadiusLookup, applyNineSlice, texSettings, nineSlice);
                         // Note: NO SaveAndReimport() here — batched by StopAssetEditing
                     }
                 }
@@ -191,7 +204,8 @@ namespace FigmaImporter
             string fileName,
             Dictionary<string, float> cornerRadiusLookup,
             bool applyNineSlice,
-            TextureImportSettings settings)
+            TextureImportSettings settings,
+            NineSliceData nineSlice = null)
         {
             // Basic type settings
             importer.textureType = TextureImporterType.Sprite;
@@ -236,8 +250,17 @@ namespace FigmaImporter
                 importer.SetPlatformTextureSettings(iosSettings);
             }
 
-            // 9-slice detection (currently disabled)
-            // TODO Phase 5: re-enable with Smart 9-Slice Pipeline
+            // 9-slice: apply spriteBorder from manifest nineSlice data
+            if (nineSlice != null && nineSlice.Border != null && nineSlice.Border.Length == 4)
+            {
+                // Border order: [left, bottom, right, top] — matches Unity's Vector4(x=left, y=bottom, z=right, w=top)
+                importer.spriteBorder = new UnityEngine.Vector4(
+                    nineSlice.Border[0],
+                    nineSlice.Border[1],
+                    nineSlice.Border[2],
+                    nineSlice.Border[3]
+                );
+            }
         }
 
         /// <summary>
