@@ -82,6 +82,7 @@ function sendSelectionInfo(): void {
             figmaType: el.type,
             depth: depthMap.get(el.id) || 0,
             size: { w: el.rect.w, h: el.rect.h },
+            cornerRadius: el.cornerRadius,
             hasAsset: el.exportable,
             hasChildren: el.children.length > 0,
             locked: isLocked,

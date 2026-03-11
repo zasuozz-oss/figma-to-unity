@@ -190,6 +190,7 @@ export interface TreeElement {
     figmaType: string;
     depth: number;
     size: { w: number; h: number };
+    cornerRadius: number;
     hasAsset: boolean;
     hasChildren: boolean;
 }

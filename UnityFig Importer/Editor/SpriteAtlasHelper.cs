@@ -19,7 +19,7 @@ namespace FigmaImporter
     {
         public bool CreateAtlas = true;
         public bool EnableRotation = false;
-        public int Padding = 2;
+        public int Padding = 8;
         public bool IncludeInBuild = true;
         public string AtlasSubfolder = "Atlas";
 
@@ -50,7 +50,7 @@ namespace FigmaImporter
         {
             CreateAtlas = EditorPrefs.GetBool(PREF_PREFIX + "Create", true);
             EnableRotation = EditorPrefs.GetBool(PREF_PREFIX + "Rotation", false);
-            Padding = EditorPrefs.GetInt(PREF_PREFIX + "Padding", 2);
+            Padding = EditorPrefs.GetInt(PREF_PREFIX + "Padding", 8);
             IncludeInBuild = EditorPrefs.GetBool(PREF_PREFIX + "InBuild", true);
             AtlasSubfolder = EditorPrefs.GetString(PREF_PREFIX + "Subfolder", "Atlas");
 
@@ -125,7 +125,10 @@ namespace FigmaImporter
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
 
-            Debug.Log($"[FigmaImporter] ✅ SpriteAtlas created: {atlasPath}");
+            // Auto pack preview so atlas is ready to use immediately
+            SpriteAtlasUtility.PackAllAtlases(EditorUserBuildSettings.activeBuildTarget);
+
+            Debug.Log($"[FigmaImporter] ✅ SpriteAtlas created & packed: {atlasPath}");
             return atlas;
         }
 
