@@ -38,7 +38,6 @@
 - [Anchor Mapping](#-constraint--anchor-mapping)
 - [Bảo Mật](#-bảo-mật)
 - [Development](#-development)
-- [Đóng Góp](#-đóng-góp)
 - [Credits](#-credits)
 - [License](#-license)
 
@@ -282,18 +281,6 @@ npm run watch
 cd FigExportForUnity/server
 npx tsc
 ```
-
----
-
-## 🤝 Đóng Góp
-
-Mọi đóng góp đều được hoan nghênh! Vui lòng:
-
-1. Fork repository
-2. Tạo feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit thay đổi (`git commit -m 'Add amazing feature'`)
-4. Push lên branch (`git push origin feature/amazing-feature`)
-5. Mở Pull Request
 
 ---
 
