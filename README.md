@@ -1,27 +1,29 @@
 # Figma-To-Unity — Export & Import Tool + MCP Bridge
 
-> Công cụ chuyển đổi thiết kế Figma sang Unity UI tự động. Gồm 3 phần: **Figma Plugin** (export + MCP client), **MCP Bridge Server**, và **Unity Editor Importer**.
+**🌐 [Tiếng Việt](README.vi.md)**
+
+> Automated Figma-to-Unity UI converter. Includes 3 parts: **Figma Plugin** (export + MCP client), **MCP Bridge Server**, and **Unity Editor Importer**.
 
 ---
 
-## ✨ Tính Năng Chính
+## ✨ Key Features
 
-- ✅ **Export trực tiếp từ Figma** — Plugin chạy trong Figma, chọn frame → export manifest + PNG
-- ✅ **Import vào Unity** — Editor Window parse manifest, tạo UI hierarchy tự động
-- ✅ **MCP Bridge tích hợp** — AI tools (Cursor, Antigravity, Claude) đọc Figma design qua MCP protocol
-- ✅ **Dual Mode UI** — Chuyển giữa Export mode và MCP mode trong cùng 1 plugin
+- ✅ **Direct Export from Figma** — Plugin runs inside Figma, select frame → export manifest + PNGs
+- ✅ **Import into Unity** — Editor Window parses manifest, auto-creates UI hierarchy
+- ✅ **Integrated MCP Bridge** — AI tools (Cursor, Antigravity, Claude) read Figma design via MCP protocol
+- ✅ **Dual Mode UI** — Switch between Export mode and MCP mode in one plugin
 - ✅ **Auto Layout → Layout Groups** — Figma auto-layout → Unity HorizontalLayoutGroup / VerticalLayoutGroup
-- ✅ **TextMeshPro** — Text tự động map font, size, color, alignment
-- ✅ **Per-element Merge/Exclude/PNG** — Tuỳ chỉnh từng element trong layer tree
-- ✅ **Hash-based Deduplication** — Tự động loại bỏ PNG trùng lặp (FNV-1a hash)
-- ✅ **Sprite Atlas** — Tự động tạo SpriteAtlas gom các sprite đã import
-- ✅ **Render Pipeline** — Hỗ trợ cả UGUI (Canvas + Image) và 2D Object (SpriteRenderer)
-- ✅ **Flexible Export Scale** — Scale (0.5x → 4x) hoặc Fixed Size (512w, 1024h, ...)
-- ✅ **Minimize Mode** — Thu nhỏ plugin thành thanh trạng thái MCP nhỏ gọn
+- ✅ **TextMeshPro** — Text auto-maps font, size, color, alignment
+- ✅ **Per-element Merge/Exclude/PNG** — Customize each element in the layer tree
+- ✅ **Hash-based Deduplication** — Auto-removes duplicate PNGs (FNV-1a hash)
+- ✅ **Sprite Atlas** — Auto-creates SpriteAtlas from imported sprites
+- ✅ **Render Pipeline** — Supports both UGUI (Canvas + Image) and 2D Object (SpriteRenderer)
+- ✅ **Flexible Export Scale** — Scale (0.5x → 4x) or Fixed Size (512w, 1024h, ...)
+- ✅ **Minimize Mode** — Collapse plugin into a compact MCP status bar
 
 ---
 
-## 🏗️ Kiến Trúc
+## 🏗️ Architecture
 
 ```
 figma-to-unity/
@@ -49,7 +51,7 @@ figma-to-unity/
 │   ├── dist/                     # Build output (plugin)
 │   └── manifest.json             # Figma plugin manifest
 │
-└── UnityFigImporter/            # Unity Editor Package (C#)
+└── UnityFigImporter/             # Unity Editor Package (C#)
     └── Editor/
         ├── FigmaImporterWindow.cs    # Main EditorWindow (UI + build flow)
         ├── ManifestParser.cs         # JSON → C# objects
@@ -62,20 +64,20 @@ figma-to-unity/
 
 ---
 
-## 📦 Cài Đặt
+## 📦 Installation
 
-### Yêu cầu
+### Requirements
 
-| Component | Phiên bản |
+| Component | Version |
 |:---|:---|
 | **Figma Desktop** | Latest |
 | **Unity** | 2022.3+ LTS |
 | **TextMeshPro** | Installed via Package Manager |
 | **Newtonsoft JSON** | Installed via Package Manager |
-| **Node.js** | >= 20 (để build plugin + server) |
-| **Bun** (optional) | >= 1.0 (để build server nhanh hơn) |
+| **Node.js** | >= 20 (to build plugin + server) |
+| **Bun** (optional) | >= 1.0 (faster server builds) |
 
-### Bước 1: Build Figma Plugin
+### Step 1: Build Figma Plugin
 
 ```bash
 cd "FigExport for Unity"
@@ -83,22 +85,22 @@ npm install
 npm run build
 ```
 
-Trong Figma Desktop:
+In Figma Desktop:
 1. **Plugins** → **Development** → **Import plugin from manifest...**
-2. Chọn file `FigExport for Unity/manifest.json`
-3. Plugin sẽ xuất hiện trong menu Plugins
+2. Select `FigExport for Unity/manifest.json`
+3. Plugin will appear in the Plugins menu
 
-### Bước 2: Build MCP Bridge Server
+### Step 2: Build MCP Bridge Server
 
 ```bash
 cd "FigExport for Unity/server"
-bun install    # hoặc npm install
-bun run build  # hoặc npx tsc
+bun install    # or npm install
+bun run build  # or npx tsc
 ```
 
-### Bước 3: Cấu hình MCP cho AI Tool
+### Step 3: Configure MCP for your AI Tool
 
-Thêm vào file cấu hình MCP của tool bạn dùng (ví dụ `mcp_config.json`):
+Add to your tool's MCP config file (e.g. `mcp_config.json`):
 
 ```json
 {
@@ -111,72 +113,72 @@ Thêm vào file cấu hình MCP của tool bạn dùng (ví dụ `mcp_config.jso
 }
 ```
 
-> **Lưu ý:** Thay `<path-to-repo>` bằng đường dẫn tuyệt đối tới thư mục repo trên máy bạn.
+> **Note:** Replace `<path-to-repo>` with the absolute path to this repo on your machine.
 
-### Bước 4: Cài đặt Unity Importer
+### Step 4: Install Unity Importer
 
-**Cách 1 — Copy thư mục:**
+**Option 1 — Copy folder:**
 ```
-Copy thư mục "UnityFigImporter" vào Assets/ trong Unity project
+Copy the "UnityFigImporter" folder into Assets/ in your Unity project
 ```
 
-**Cách 2 — Unity Package Manager (Local):**
-1. Mở **Window** → **Package Manager**
+**Option 2 — Unity Package Manager (Local):**
+1. Open **Window** → **Package Manager**
 2. **"+"** → **Add package from disk...**
-3. Chọn file `UnityFigImporter/package.json`
+3. Select `UnityFigImporter/package.json`
 
-**Cách 3 — Git URL:**
+**Option 3 — Git URL:**
 ```
-https://github.com/<user>/figma-to-unity.git?path=UnityFigImporter
+https://github.com/zasuozz-oss/figma-to-unity.git?path=UnityFigImporter
 ```
 
 ---
 
-## 🚀 Hướng Dẫn Sử Dụng
+## 🚀 Usage
 
-### Export từ Figma
+### Export from Figma
 
-1. Mở design trong Figma Desktop
-2. **Chọn Frame** cần export
-3. Chạy plugin: **Plugins** → **Figma to Unity**
-4. Trong plugin UI:
-   - Chuyển tab **Export** để xuất design
-   - Chuyển tab **MCP** để xem trạng thái MCP Bridge
-   - Tuỳ chỉnh **Merge / PNG / Exclude** trên từng element
-   - Chọn **Export Scale**: 0.5x, 0.75x, 1x, 1.5x, 2x (mặc định), 3x, 4x hoặc Fixed Size (512w, 1024h)
-   - Click **▬** để thu nhỏ plugin (hiện thanh trạng thái MCP)
-5. Click **"Export"** → Download ZIP chứa manifest + PNG assets
+1. Open your design in Figma Desktop
+2. **Select the Frame** to export
+3. Run the plugin: **Plugins** → **Figma to Unity**
+4. In the plugin UI:
+   - Switch to **Export** tab to export design
+   - Switch to **MCP** tab to view MCP Bridge status
+   - Customize **Merge / PNG / Exclude** per element
+   - Choose **Export Scale**: 0.5x, 0.75x, 1x, 1.5x, 2x (default), 3x, 4x or Fixed Size (512w, 1024h)
+   - Click **▬** to minimize plugin (shows MCP status bar)
+5. Click **"Export"** → Downloads ZIP containing manifest + PNG assets
 
-### Import vào Unity
+### Import into Unity
 
-1. Giải nén ZIP vào thư mục bất kỳ
-2. Mở **Window** → **Figma Importer**
-3. Chọn thư mục chứa `manifest.json` (drag & drop hoặc browse)
-4. Cấu hình build options:
+1. Unzip the ZIP file into any folder
+2. Open **Window** → **Figma Importer**
+3. Select the folder containing `manifest.json` (drag & drop or browse)
+4. Configure build options:
    - **Output Mode**: Scene / Prefab / Both
-   - **Render Pipeline**: UGUI hoặc Object2D
+   - **Render Pipeline**: UGUI or Object2D
    - **Canvas Scale**: Auto / 1x / 1.5x / 2x / 3x / 4x / Custom
    - **Texture Settings**: Max size, compression, filter mode
-   - **Sprite Atlas**: Tự động tạo atlas gom sprites (tuỳ chọn)
-5. Click **"Build UI"** → Unity tự động tạo UI hierarchy
+   - **Sprite Atlas**: Auto-create atlas from sprites (optional)
+5. Click **"Build UI"** → Unity auto-creates the UI hierarchy
 
-### MCP Bridge (cho AI Tools)
+### MCP Bridge (for AI Tools)
 
-Khi plugin Figma đang mở, MCP Bridge tự động kết nối qua WebSocket (`ws://localhost:1994/ws`). AI tools có thể:
-- Đọc document tree, selection, styles
-- Export screenshots theo node ID
-- Lấy design context, variables, metadata
+When the Figma plugin is open, MCP Bridge auto-connects via WebSocket (`ws://localhost:1994/ws`). AI tools can:
+- Read document tree, selection, styles
+- Export screenshots by node ID
+- Get design context, variables, metadata
 
 ---
 
-## 🔧 Tính Năng Per-Element
+## 🔧 Per-Element Features
 
-| Nút | Chức năng |
+| Button | Function |
 |:---|:---|
-| **Merge** | Flatten parent + children thành 1 PNG duy nhất |
-| **PNG** (text) | Rasterize TEXT thành PNG thay vì TextMeshPro |
-| **×** (exclude) | Bỏ qua element, không export |
-| **👁** (visibility) | Ẩn/hiện element trong Figma |
+| **Merge** | Flatten parent + children into a single PNG |
+| **PNG** (text) | Rasterize TEXT as PNG instead of TextMeshPro |
+| **×** (exclude) | Skip element, don't export |
+| **👁** (visibility) | Show/hide element in Figma |
 
 ---
 
@@ -194,12 +196,12 @@ Khi plugin Figma đang mở, MCP Bridge tự động kết nối qua WebSocket (
 
 ---
 
-## 🔒 Bảo Mật
+## 🔒 Security
 
-- Server chỉ bind `localhost:1994` — không expose ra mạng
-- File write có path traversal protection + exclusive write flag
-- Input validation (Zod) cho tất cả MCP tool calls
-- Không có `eval()`, `exec()`, hoặc hardcoded secrets
+- Server only binds to `localhost:1994` — not exposed to the network
+- File writes have path traversal protection + exclusive write flag
+- Input validation (Zod) for all MCP tool calls
+- No `eval()`, `exec()`, or hardcoded secrets
 
 ---
 
@@ -208,7 +210,7 @@ Khi plugin Figma đang mở, MCP Bridge tự động kết nối qua WebSocket (
 ### Build Figma Plugin
 ```bash
 cd "FigExport for Unity"
-npm run build        # Build một lần
+npm run build        # Build once
 npm run watch        # Watch mode (auto-rebuild)
 ```
 
@@ -222,7 +224,7 @@ bun run build        # TypeScript → JavaScript
 
 ## 🙏 Credits
 
-- MCP Bridge Server dựa trên [figma-mcp-bridge](https://github.com/gethopp/figma-mcp-bridge) bởi **gethopp**
+- MCP Bridge Server based on [figma-mcp-bridge](https://github.com/gethopp/figma-mcp-bridge) by **gethopp**
 
 ---
 
