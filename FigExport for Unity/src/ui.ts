@@ -473,7 +473,7 @@ function initTreeState(tree: any[]) {
         // Auto-detect 9-slice candidates (only when global 9S is enabled):
         // Any container type (FRAME/RECTANGLE/COMPONENT/INSTANCE) with size > 64px
         // or any element with cornerRadius > 0
-        var containerTypes = ['FRAME', 'RECTANGLE', 'COMPONENT', 'INSTANCE'];
+        var containerTypes = ['FRAME', 'GROUP', 'RECTANGLE', 'COMPONENT', 'INSTANCE'];
         var isCandidate = nineSliceEnabled
             && el.size.w > 64 && el.size.h > 64
             && (containerTypes.indexOf(el.figmaType) >= 0 || el.cornerRadius > 0);
@@ -786,7 +786,7 @@ function toggleGlobalNineSlice() {
 }
 
 function reDetectNineSlice() {
-    var containerTypes = ['FRAME', 'RECTANGLE', 'COMPONENT', 'INSTANCE'];
+    var containerTypes = ['FRAME', 'GROUP', 'RECTANGLE', 'COMPONENT', 'INSTANCE'];
     for (var i = 0; i < currentTree.length; i++) {
         var el = currentTree[i];
         var isCandidate = el.size.w > 64 && el.size.h > 64
@@ -967,7 +967,7 @@ function renderTree() {
         if (filter9sActive) {
             var is9sCandidate = !state.excluded
                 && el.size.w > 64 && el.size.h > 64
-                && (['FRAME', 'RECTANGLE', 'COMPONENT', 'INSTANCE'].indexOf(el.figmaType) >= 0 || el.cornerRadius > 0);
+                && (['FRAME', 'GROUP', 'RECTANGLE', 'COMPONENT', 'INSTANCE'].indexOf(el.figmaType) >= 0 || el.cornerRadius > 0);
             if (!is9sCandidate) continue;
         }
 
@@ -1035,7 +1035,7 @@ function renderTree() {
         // 9S button for non-TEXT elements that are candidates (container types > 64px or cornerRadius > 0 or already active)
         if (el.figmaType !== 'TEXT') {
             var isNsCandidate = (el.size.w > 64 && el.size.h > 64
-                && ['FRAME', 'RECTANGLE', 'COMPONENT', 'INSTANCE'].indexOf(el.figmaType) >= 0)
+                && ['FRAME', 'GROUP', 'RECTANGLE', 'COMPONENT', 'INSTANCE'].indexOf(el.figmaType) >= 0)
                 || el.cornerRadius > 0
                 || state.nineSlice;
             if (isNsCandidate) {
