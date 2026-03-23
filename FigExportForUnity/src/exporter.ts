@@ -181,13 +181,7 @@ export async function exportDesign(
         // For merged parents: clear ALL children (fully flattened into parent PNG)
         var childrenIds = isMerged ? [] : el.children;
 
-        // For PNG-exported parents: strip layout groups — auto-layout would
-        // override children's manifest-based positions in Unity
-        if (shouldExportPng && el.type !== 'TEXT' && !isMerged) {
-            components = components.filter(
-                (c: string) => c !== 'HorizontalLayoutGroup' && c !== 'VerticalLayoutGroup'
-            );
-        }
+        // Layout group stripping removed — auto-layout components are no longer generated
 
         // Build element data
         // For TEXT exported as PNG: swap TextMeshProUGUI → Image, strip text data

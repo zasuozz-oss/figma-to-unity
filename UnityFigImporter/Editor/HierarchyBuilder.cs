@@ -201,17 +201,8 @@ namespace FigmaImporter
             // Add RectTransform (required for UI)
             RectTransform rt = go.AddComponent<RectTransform>();
 
-            // Check if parent has auto-layout → keep Figma anchors/pivot
-            // Otherwise → force middle-center (0.5, 0.5)
-            bool parentHasAutoLayout = false;
-            if (parent != null)
-            {
-                // Check parent's layout group components
-                parentHasAutoLayout = parent.GetComponent<HorizontalLayoutGroup>() != null
-                                  || parent.GetComponent<VerticalLayoutGroup>() != null;
-            }
-
-            ApplyRectTransform(rt, element.Unity, scaleFactor, parentHasAutoLayout);
+            // Apply RectTransform — always use fixed offset positioning
+            ApplyRectTransform(rt, element, scaleFactor);
 
             // Fix 1: Root element — reset to center of Canvas
             if (parent == null)
@@ -255,33 +246,21 @@ namespace FigmaImporter
 
         /// <summary>
         /// Apply pre-computed RectTransform values from manifest.
-        /// If parent is NOT auto-layout, forces middle-center anchor/pivot
-        /// and recalculates position accordingly.
+        /// Uses mapper-computed offsets for fixed positioning of all elements.
         /// </summary>
-        static void ApplyRectTransform(RectTransform rt, UnityTransformData unity, float scaleFactor, bool parentHasAutoLayout)
+        static void ApplyRectTransform(RectTransform rt, ElementData element, float scaleFactor)
         {
             // Default to center anchor/pivot
             rt.anchorMin = new Vector2(0.5f, 0.5f);
             rt.anchorMax = new Vector2(0.5f, 0.5f);
             rt.pivot = new Vector2(0.5f, 0.5f);
 
+            var unity = element.Unity;
+
+            // Use mapper-computed transform data
             if (unity == null) return;
 
-            if (parentHasAutoLayout)
-            {
-                // Parent has auto-layout — use Figma anchors/pivot so LayoutGroup controls position
-                if (unity.AnchorMin != null && unity.AnchorMin.Length >= 2)
-                    rt.anchorMin = new Vector2(unity.AnchorMin[0], unity.AnchorMin[1]);
-
-                if (unity.AnchorMax != null && unity.AnchorMax.Length >= 2)
-                    rt.anchorMax = new Vector2(unity.AnchorMax[0], unity.AnchorMax[1]);
-
-                if (unity.Pivot != null && unity.Pivot.Length >= 2)
-                    rt.pivot = new Vector2(unity.Pivot[0], unity.Pivot[1]);
-            }
-            // else: keep default middle-center (0.5, 0.5) for anchor and pivot
-
-            // Step 3: Position — use offsetMin/Max if available (they encode both position AND size)
+            // Position — use offsetMin/Max if available (they encode both position AND size)
             // For middle-center anchoring, offsets are relative to parent center
             bool hasOffsets = (unity.OffsetMin != null && unity.OffsetMin.Length >= 2)
                            && (unity.OffsetMax != null && unity.OffsetMax.Length >= 2);
@@ -347,12 +326,9 @@ namespace FigmaImporter
                         AddTextComponent(go, element, scaleFactor, options, fontMapping, log);
                         break;
 
+                    // Layout groups disabled — all positioning uses fixed RectTransform
                     case "HorizontalLayoutGroup":
-                        AddLayoutGroup(go, element, isHorizontal: true, scaleFactor);
-                        break;
-
                     case "VerticalLayoutGroup":
-                        AddLayoutGroup(go, element, isHorizontal: false, scaleFactor);
                         break;
 
                     case "CanvasGroup":
@@ -514,38 +490,14 @@ namespace FigmaImporter
             // RaycastTarget: text elements ALWAYS disable — text rarely needs raycast
             text.raycastTarget = false;
 
-            // Overflow
+            // Overflow — disable word wrapping because Figma sizes define the exact
+            // bounding box. TMP rounding can differ by ~2px causing unwanted line breaks.
             text.overflowMode = TextOverflowModes.Overflow;
-            text.enableWordWrapping = true;
+            text.enableWordWrapping = false;
         }
 
-        static void AddLayoutGroup(GameObject go, ElementData element, bool isHorizontal, float scaleFactor)
-        {
-            HorizontalOrVerticalLayoutGroup layout;
-
-            if (isHorizontal)
-                layout = go.AddComponent<HorizontalLayoutGroup>();
-            else
-                layout = go.AddComponent<VerticalLayoutGroup>();
-
-            // Don't let layout group override child sizes — we set them manually
-            layout.childControlWidth = false;
-            layout.childControlHeight = false;
-            layout.childForceExpandWidth = false;
-            layout.childForceExpandHeight = false;
-
-            // Apply spacing and padding from Figma auto-layout data
-            if (element.AutoLayout != null)
-            {
-                layout.spacing = element.AutoLayout.ItemSpacing * scaleFactor;
-                layout.padding = new RectOffset(
-                    Mathf.RoundToInt(element.AutoLayout.PaddingLeft * scaleFactor),
-                    Mathf.RoundToInt(element.AutoLayout.PaddingRight * scaleFactor),
-                    Mathf.RoundToInt(element.AutoLayout.PaddingTop * scaleFactor),
-                    Mathf.RoundToInt(element.AutoLayout.PaddingBottom * scaleFactor)
-                );
-            }
-        }
+        // AddLayoutGroup removed — auto-layout components are no longer used.
+        // All child positioning is handled via fixed RectTransform offsets.
 
         static void AddCanvasGroup(GameObject go, ElementData element)
         {

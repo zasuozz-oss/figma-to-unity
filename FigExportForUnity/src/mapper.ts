@@ -195,15 +195,11 @@ function computePivot(
 
 /**
  * Determine which Unity layout component to use based on Figma auto-layout.
+ * DISABLED: Auto-layout components cause position conflicts in Unity.
+ * All positioning is handled via fixed RectTransform offsets instead.
  */
 export function getLayoutComponent(element: FigmaElement): string | null {
-    if (!element.autoLayout) return null;
-
-    switch (element.autoLayout.layoutMode) {
-        case 'HORIZONTAL': return 'HorizontalLayoutGroup';
-        case 'VERTICAL': return 'VerticalLayoutGroup';
-        default: return null;
-    }
+    return null;
 }
 
 /**
@@ -218,11 +214,7 @@ export function determineComponents(element: FigmaElement): string[] {
         components.push('Image');
     }
 
-    // Add layout component if auto-layout
-    const layout = getLayoutComponent(element);
-    if (layout) {
-        components.push(layout);
-    }
+    // Auto-layout components disabled — all positioning uses fixed RectTransform offsets
 
     // Button detection: interactive elements with "button" or "btn" in name
     const nameLower = element.name.toLowerCase();
