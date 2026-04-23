@@ -36,8 +36,8 @@ function sendSelectionInfo(): void {
     var rootNode: SceneNode = selection[0];
     var clickedNodeId: string | null = rootNode.id; // Track originally clicked node
 
-    // Validate type — if invalid (e.g. GROUP), walk up to nearest valid parent
-    const validTypes = ['FRAME', 'COMPONENT', 'COMPONENT_SET', 'INSTANCE'];
+    // Validate type — if invalid, walk up to nearest valid parent
+    const validTypes = ['FRAME', 'GROUP', 'COMPONENT', 'COMPONENT_SET', 'INSTANCE'];
     while (!validTypes.includes(rootNode.type) && rootNode.parent && rootNode.parent.type !== 'PAGE') {
         rootNode = rootNode.parent as SceneNode;
     }
@@ -310,8 +310,8 @@ async function handleExport(
         return;
     }
 
-    // Walk up to nearest valid parent if selection is a GROUP or other invalid type
-    const validTypes = ['FRAME', 'COMPONENT', 'COMPONENT_SET', 'INSTANCE'];
+    // Walk up to nearest valid parent if selection is an invalid type
+    const validTypes = ['FRAME', 'GROUP', 'COMPONENT', 'COMPONENT_SET', 'INSTANCE'];
     while (!validTypes.includes(rootNode.type) && rootNode.parent && rootNode.parent.type !== 'PAGE') {
         rootNode = rootNode.parent as SceneNode;
     }
@@ -323,6 +323,10 @@ async function handleExport(
         return;
     }
 
+    // Suppress documentchange events during export to prevent the UI
+    // from caching temporary visibility changes (hideExportableDescendants)
+    // as permanent state changes. This is the same pattern used in handlePreviewElement.
+    suppressDocumentChange = true;
     try {
         // Export with merge + exclude support
         const result = await exportDesign(
@@ -343,6 +347,9 @@ async function handleExport(
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         postToUI({ type: 'export-error', message: 'Export failed: ' + message });
+    } finally {
+        // Delay flag reset — documentchange fires async after visibility restore
+        setTimeout(function () { suppressDocumentChange = false; }, 300);
     }
 }
 

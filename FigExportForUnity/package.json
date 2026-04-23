@@ -1,6 +1,6 @@
 {
     "name": "figma-to-unity-plugin",
-    "version": "0.1.0",
+    "version": "0.0.2",
     "description": "Figma plugin to export designs as Unity uGUI-ready ZIP (manifest.json + PNGs)",
     "scripts": {
         "build": "rimraf dist && node esbuild.config.mjs",

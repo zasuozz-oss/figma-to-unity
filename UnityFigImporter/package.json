@@ -1,6 +1,6 @@
 {
     "name": "com.figma.unity-importer",
-    "version": "1.0.0",
+    "version": "0.0.2",
     "displayName": "Figma to Unity Importer",
     "description": "Import Figma designs into Unity UI via manifest.json + PNG assets.",
     "unity": "2022.3",

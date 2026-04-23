@@ -89,6 +89,9 @@ namespace FigmaImporter.Data
         [JsonProperty("asset")]
         public string Asset;
 
+        [JsonProperty("assetBounds")]
+        public AssetBoundsData AssetBounds;
+
         [JsonProperty("interactive")]
         public bool Interactive;
 
@@ -106,6 +109,34 @@ namespace FigmaImporter.Data
 
         [JsonProperty("nineSlice")]
         public NineSliceData NineSlice;
+
+        [JsonProperty("clipsContent")]
+        public bool ClipsContent;
+    }
+
+    [Serializable]
+    public class AssetBoundsData
+    {
+        [JsonProperty("x")]
+        public float X;
+
+        [JsonProperty("y")]
+        public float Y;
+
+        [JsonProperty("w")]
+        public float W;
+
+        [JsonProperty("h")]
+        public float H;
+
+        [JsonProperty("pixelWidth")]
+        public int PixelWidth;
+
+        [JsonProperty("pixelHeight")]
+        public int PixelHeight;
+
+        [JsonProperty("exportScale")]
+        public float ExportScale;
     }
 
     [Serializable]

@@ -22,7 +22,7 @@ namespace FigmaImporter
         public int MaxTextureSize = 2048;
         public bool AutoDetectMaxSize = true;
         public bool MipmapEnabled = false;
-        public TextureImporterCompression Compression = TextureImporterCompression.Compressed;
+        public TextureImporterCompression Compression = TextureImporterCompression.Uncompressed;
 
         // Android platform override
         public bool OverrideAndroid = true;
@@ -72,7 +72,7 @@ namespace FigmaImporter
             MaxTextureSize = EditorPrefs.GetInt(PREF_PREFIX + "MaxSize", 2048);
             AutoDetectMaxSize = EditorPrefs.GetBool(PREF_PREFIX + "AutoDetect", true);
             MipmapEnabled = EditorPrefs.GetBool(PREF_PREFIX + "Mipmap", false);
-            Compression = (TextureImporterCompression)EditorPrefs.GetInt(PREF_PREFIX + "Compression", (int)TextureImporterCompression.Compressed);
+            Compression = (TextureImporterCompression)EditorPrefs.GetInt(PREF_PREFIX + "Compression", (int)TextureImporterCompression.Uncompressed);
 
             OverrideAndroid = EditorPrefs.GetBool(PREF_PREFIX + "Android", true);
             AndroidFormat = (TextureImporterFormat)EditorPrefs.GetInt(PREF_PREFIX + "AndroidFmt", (int)TextureImporterFormat.ASTC_4x4);
@@ -196,30 +196,44 @@ namespace FigmaImporter
             importer.spriteImportMode = SpriteImportMode.Single;
             importer.spritePixelsPerUnit = 100;
             importer.isReadable = false;
-
-            // User-configurable general settings
-            importer.mipmapEnabled = settings.MipmapEnabled;
-            importer.textureCompression = settings.Compression;
+            importer.alphaIsTransparency = true;
+            importer.wrapMode = TextureWrapMode.Clamp;
+            importer.filterMode = FilterMode.Bilinear;
+            TrySetFullRectSpriteMesh(importer);
 
             // Max size: auto-detect from actual texture dimensions or use user setting
             int maxSize = settings.MaxTextureSize;
+            int sourceWidth = 0;
+            int sourceHeight = 0;
             if (settings.AutoDetectMaxSize)
             {
                 // Read actual texture dimensions from the file
                 var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(importer.assetPath);
                 if (tex != null)
                 {
+                    sourceWidth = tex.width;
+                    sourceHeight = tex.height;
                     maxSize = TextureImportSettings.CalculateOptimalMaxSize(tex.width, tex.height);
                 }
             }
             importer.maxTextureSize = maxSize;
+
+            bool useLosslessMicroSprite = IsLosslessMicroSprite(sourceWidth, sourceHeight, maxSize);
+
+            // User-configurable general settings
+            importer.mipmapEnabled = settings.MipmapEnabled;
+            importer.textureCompression = useLosslessMicroSprite
+                ? TextureImporterCompression.Uncompressed
+                : settings.Compression;
 
             // ── Android platform override ──
             if (settings.OverrideAndroid)
             {
                 var androidSettings = importer.GetPlatformTextureSettings("Android");
                 androidSettings.overridden = true;
-                androidSettings.format = settings.AndroidFormat;
+                androidSettings.format = useLosslessMicroSprite
+                    ? TextureImporterFormat.RGBA32
+                    : settings.AndroidFormat;
                 androidSettings.maxTextureSize = settings.AutoDetectMaxSize ? maxSize : settings.AndroidMaxSize;
                 importer.SetPlatformTextureSettings(androidSettings);
             }
@@ -229,12 +243,47 @@ namespace FigmaImporter
             {
                 var iosSettings = importer.GetPlatformTextureSettings("iPhone");
                 iosSettings.overridden = true;
-                iosSettings.format = settings.iOSFormat;
+                iosSettings.format = useLosslessMicroSprite
+                    ? TextureImporterFormat.RGBA32
+                    : settings.iOSFormat;
                 iosSettings.maxTextureSize = settings.AutoDetectMaxSize ? maxSize : settings.iOSMaxSize;
                 importer.SetPlatformTextureSettings(iosSettings);
             }
 
 
+        }
+
+        static void TrySetFullRectSpriteMesh(TextureImporter importer)
+        {
+            var meshTypeProperty = typeof(TextureImporter).GetProperty("spriteMeshType");
+            if (meshTypeProperty != null && meshTypeProperty.CanWrite)
+            {
+                try
+                {
+                    var fullRectValue = System.Enum.Parse(meshTypeProperty.PropertyType, "FullRect");
+                    meshTypeProperty.SetValue(importer, fullRectValue, null);
+                    return;
+                }
+                catch
+                {
+                }
+            }
+
+            var serializedImporter = new SerializedObject(importer);
+            var spriteMeshTypeProperty = serializedImporter.FindProperty("m_SpriteMeshType");
+            if (spriteMeshTypeProperty != null)
+            {
+                spriteMeshTypeProperty.intValue = 1;
+                serializedImporter.ApplyModifiedPropertiesWithoutUndo();
+            }
+        }
+
+        static bool IsLosslessMicroSprite(int sourceWidth, int sourceHeight, int maxSize)
+        {
+            int width = sourceWidth > 0 ? sourceWidth : maxSize;
+            int height = sourceHeight > 0 ? sourceHeight : maxSize;
+            int maxDimension = Mathf.Max(width, height);
+            return maxDimension > 0 && maxDimension <= 32;
         }
 
         /// <summary>

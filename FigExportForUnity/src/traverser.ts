@@ -5,6 +5,13 @@
 
 import type { FigmaElement, FigmaTextProps, RGBA, AutoLayoutProps, Rect } from './types';
 
+interface AbsoluteBounds {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}
+
 /**
  * Traverse a Figma node tree using depth-first search.
  * Returns a flat array of FigmaElement, maintaining parent-child relationships via IDs.
@@ -56,6 +63,7 @@ function extractElement(node: SceneNode, parentId: string | null): FigmaElement 
     const opacity = getOpacity(node);
     const text = getTextProps(node);
     const autoLayout = getAutoLayoutProps(node);
+    const clipsContent = getClipsContent(node);
     const exportable = isExportable(node);
 
     return {
@@ -73,6 +81,7 @@ function extractElement(node: SceneNode, parentId: string | null): FigmaElement 
         children: [],
         exportable,
         autoLayout: autoLayout ?? undefined,
+        clipsContent: clipsContent || undefined,
     };
 }
 
@@ -81,12 +90,44 @@ function extractElement(node: SceneNode, parentId: string | null): FigmaElement 
 // ---------------------------------------------------------------------------
 
 function getRect(node: SceneNode): Rect {
-    // Use relative transform for position relative to parent
-    const x = node.x;
-    const y = node.y;
-    const w = node.width;
-    const h = node.height;
+    const absoluteBounds = readAbsoluteBounds(node);
+    const parentBounds = readParentAbsoluteBounds(node);
+
+    const x = absoluteBounds && parentBounds
+        ? absoluteBounds.x - parentBounds.x
+        : node.x;
+    const y = absoluteBounds && parentBounds
+        ? absoluteBounds.y - parentBounds.y
+        : node.y;
+    const w = absoluteBounds ? absoluteBounds.width : node.width;
+    const h = absoluteBounds ? absoluteBounds.height : node.height;
+
     return { x, y, w, h };
+}
+
+function readAbsoluteBounds(node: SceneNode): AbsoluteBounds | null {
+    const bounds = (node as any).absoluteBoundingBox;
+    return isValidAbsoluteBounds(bounds) ? bounds as AbsoluteBounds : null;
+}
+
+function readParentAbsoluteBounds(node: SceneNode): AbsoluteBounds | null {
+    const parent = (node as any).parent;
+    if (!parent || parent.type === 'PAGE') {
+        return null;
+    }
+
+    const bounds = (parent as any).absoluteBoundingBox;
+    return isValidAbsoluteBounds(bounds) ? bounds as AbsoluteBounds : null;
+}
+
+function isValidAbsoluteBounds(value: any): value is AbsoluteBounds {
+    return !!value
+        && typeof value.x === 'number'
+        && typeof value.y === 'number'
+        && typeof value.width === 'number'
+        && typeof value.height === 'number'
+        && value.width > 0
+        && value.height > 0;
 }
 
 function getConstraints(node: SceneNode): { horizontal: string; vertical: string } {
@@ -133,11 +174,20 @@ function getOpacity(node: SceneNode): number {
     return 1;
 }
 
+function getClipsContent(node: SceneNode): boolean {
+    if ('clipsContent' in node) {
+        return Boolean((node as SceneNode & { clipsContent?: boolean }).clipsContent);
+    }
+    return false;
+}
+
 function getTextProps(node: SceneNode): FigmaTextProps | null {
     if (node.type !== 'TEXT') return null;
 
     const textNode = node as TextNode;
-    const content = textNode.characters;
+    const rawContent = resolveTextContent(textNode);
+    const textCase = getTextProperty(textNode, 'textCase', (value: TextCase) => value, 'ORIGINAL');
+    const content = applyTextCase(rawContent, textCase);
 
     // Get font properties (handle mixed values)
     const fontFamily = getTextProperty(textNode, 'fontName', (fn: FontName) => fn.family, 'Inter');
@@ -158,6 +208,89 @@ function getTextProps(node: SceneNode): FigmaTextProps | null {
         lineHeight: lineHeight ?? undefined,
         letterSpacing: letterSpacing ?? undefined,
     };
+}
+
+function resolveTextContent(textNode: TextNode): string {
+    const directContent = typeof textNode.characters === 'string' ? textNode.characters : '';
+    const propertyReference = getTextComponentPropertyReference(textNode);
+    if (!propertyReference) {
+        return directContent;
+    }
+
+    const instanceOverride = getInstanceTextOverride(textNode, propertyReference);
+    if (typeof instanceOverride === 'string' && instanceOverride.length > 0) {
+        return instanceOverride;
+    }
+
+    return directContent;
+}
+
+function getTextComponentPropertyReference(textNode: TextNode): string | null {
+    const references = (textNode as any).componentPropertyReferences;
+    if (!references || typeof references !== 'object') {
+        return null;
+    }
+
+    if (typeof references.characters === 'string' && references.characters.length > 0) {
+        return references.characters;
+    }
+
+    if (typeof references.text === 'string' && references.text.length > 0) {
+        return references.text;
+    }
+
+    return null;
+}
+
+function getInstanceTextOverride(textNode: TextNode, propertyReference: string): string | null {
+    let parent: BaseNode | null = textNode.parent;
+    while (parent) {
+        if (parent.type === 'INSTANCE') {
+            const componentProperties = (parent as any).componentProperties;
+            if (componentProperties && typeof componentProperties === 'object') {
+                const directMatch = componentProperties[propertyReference];
+                if (directMatch && typeof directMatch.value === 'string' && directMatch.value.length > 0) {
+                    return directMatch.value;
+                }
+
+                const entries = Object.keys(componentProperties);
+                for (let index = 0; index < entries.length; index++) {
+                    const key = entries[index];
+                    const entry = componentProperties[key];
+                    if (!entry || typeof entry !== 'object') continue;
+
+                    if (typeof entry.value === 'string' && typeof entry.name === 'string') {
+                        const normalizedReference = propertyReference.toLowerCase();
+                        const normalizedName = entry.name.toLowerCase();
+                        if (normalizedReference.indexOf(normalizedName) >= 0 && entry.value.length > 0) {
+                            return entry.value;
+                        }
+                    }
+                }
+            }
+        }
+        parent = parent.parent;
+    }
+
+    return null;
+}
+
+function applyTextCase(content: string, textCase: TextCase): string {
+    switch (textCase) {
+        case 'UPPER':
+        case 'SMALL_CAPS_FORCED':
+            return content.toUpperCase();
+        case 'LOWER':
+            return content.toLowerCase();
+        case 'TITLE':
+            return content.replace(/\S+/g, function (word) {
+                return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+            });
+        case 'SMALL_CAPS':
+        case 'ORIGINAL':
+        default:
+            return content;
+    }
 }
 
 function getAutoLayoutProps(node: SceneNode): AutoLayoutProps | null {
@@ -182,12 +315,60 @@ function getAutoLayoutProps(node: SceneNode): AutoLayoutProps | null {
 // Exportable detection
 // ---------------------------------------------------------------------------
 
+export function isIconContainer(node: SceneNode): boolean {
+    const validTypes = ['GROUP', 'FRAME', 'COMPONENT', 'INSTANCE'];
+    if (validTypes.indexOf(node.type) < 0) return false;
+
+    let isIcon = true;
+    let hasVectorLeaf = false;
+    function check(n: SceneNode) {
+        if (!isIcon) return;
+
+        // Skip invisible nodes — hidden bounding rects, guides, etc.
+        if ('visible' in n && !n.visible) return;
+
+        if (n.type === 'VECTOR' || n.type === 'BOOLEAN_OPERATION' || n.type === 'LINE'
+            || n.type === 'ELLIPSE' || n.type === 'POLYGON' || n.type === 'STAR'
+            || n.type === 'RECTANGLE') {
+            hasVectorLeaf = true;
+            return;
+        }
+
+        if (n.type === 'GROUP') {
+            if (!('children' in n) || n.children.length === 0) {
+                isIcon = false;
+                return;
+            }
+            for (let i = 0; i < n.children.length; i++) {
+                check(n.children[i]);
+            }
+            return;
+        }
+
+        if (n.type === 'FRAME' || n.type === 'COMPONENT' || n.type === 'INSTANCE' || n.type === 'TEXT') {
+            isIcon = false;
+            return;
+        }
+
+        isIcon = false;
+    }
+
+    // An icon container must have children
+    if (!('children' in node) || (node as ChildrenMixin).children.length === 0) return false;
+
+    const parentNode = node as ChildrenMixin;
+    for (var i = 0; i < parentNode.children.length; i++) {
+        check(parentNode.children[i]);
+    }
+    return isIcon && hasVectorLeaf;
+}
+
 /**
  * Determine if a node should be exported as a PNG.
  *
  * Export rules:
  * - TEXT → never export (text is rendered by TMP in Unity)
- * - GROUP → never export (only a hierarchy container)
+ * - GROUP → never export (only a hierarchy container), UNLESS it is an icon group
  * - VECTOR, BOOLEAN_OPERATION → always export (icons)
  * - FRAME/RECTANGLE/COMPONENT/INSTANCE → export if has visual fills/effects
  */
@@ -195,14 +376,21 @@ function isExportable(node: SceneNode): boolean {
     // Never export text
     if (node.type === 'TEXT') return false;
 
-    // Never export pure groups
-    if (node.type === 'GROUP') return false;
+    // Never export pure groups, unless it is a pure vector icon
+    if (node.type === 'GROUP') {
+        if (isIconContainer(node)) return true;
+        return false;
+    }
 
     // Always export vectors/icons
-    if (node.type === 'VECTOR' || node.type === 'BOOLEAN_OPERATION') return true;
+    if (node.type === 'VECTOR' || node.type === 'BOOLEAN_OPERATION' || node.type === 'LINE'
+        || node.type === 'ELLIPSE' || node.type === 'POLYGON' || node.type === 'STAR') return true;
 
     // For frames that are containers (have children but no visual fills), don't export
     if ('children' in node && (node as ChildrenMixin & SceneNode).children.length > 0) {
+        // If it's a pure vector icon component/instance, always export
+        if (isIconContainer(node)) return true;
+
         // Container frame: export only if it has meaningful fills
         if ('fills' in node) {
             const fills = (node as GeometryMixin).fills;
@@ -210,7 +398,7 @@ function isExportable(node: SceneNode): boolean {
                 const visibleFills = (fills as ReadonlyArray<Paint>).filter(
                     (f) => f.visible !== false
                 );
-                if (visibleFills.length === 0) return false; // Pure container
+                if (visibleFills.length === 0 && !hasVisibleStroke(node)) return false; // Pure container
             }
         }
     }
@@ -228,6 +416,8 @@ function isExportable(node: SceneNode): boolean {
         if (hasVisibleFill || hasImageFill) return true;
     }
 
+    if (hasVisibleStroke(node)) return true;
+
     // Check effects (shadows, blurs, etc.)
     if ('effects' in node) {
         const effects = (node as BlendMixin).effects;
@@ -235,6 +425,17 @@ function isExportable(node: SceneNode): boolean {
     }
 
     return false;
+}
+
+export function hasVisibleStroke(node: SceneNode): boolean {
+    if (!('strokes' in node)) return false;
+
+    const strokes = (node as GeometryMixin).strokes;
+    if (strokes === figma.mixed) return true;
+
+    return (strokes as ReadonlyArray<Paint>).some(function (stroke) {
+        return stroke.visible !== false && stroke.opacity !== 0;
+    });
 }
 
 // ---------------------------------------------------------------------------

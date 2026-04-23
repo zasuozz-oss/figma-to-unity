@@ -74,3 +74,8 @@ coverage/
 # Cache
 .cache/
 .turbo/
+.gitnexus
+AGENTS.md
+CLAUDE.md
+.agents/
+.claude/

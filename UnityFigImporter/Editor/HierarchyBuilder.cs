@@ -250,33 +250,99 @@ namespace FigmaImporter
         /// </summary>
         static void ApplyRectTransform(RectTransform rt, ElementData element, float scaleFactor)
         {
-            // Default to center anchor/pivot
-            rt.anchorMin = new Vector2(0.5f, 0.5f);
-            rt.anchorMax = new Vector2(0.5f, 0.5f);
-            rt.pivot = new Vector2(0.5f, 0.5f);
-
             var unity = element.Unity;
+            if (unity == null)
+            {
+                rt.anchorMin = new Vector2(0.5f, 0.5f);
+                rt.anchorMax = new Vector2(0.5f, 0.5f);
+                rt.pivot = new Vector2(0.5f, 0.5f);
+                rt.localScale = Vector3.one;
+                return;
+            }
 
-            // Use mapper-computed transform data
-            if (unity == null) return;
+            Vector2 anchorMin = ReadVector2(unity.AnchorMin, new Vector2(0.5f, 0.5f));
+            Vector2 anchorMax = ReadVector2(unity.AnchorMax, new Vector2(0.5f, 0.5f));
+            Vector2 pivot = new Vector2(0.5f, 0.5f);
+
+            rt.anchorMin = anchorMin;
+            rt.anchorMax = anchorMax;
+            rt.pivot = pivot;
 
             // Position — use offsetMin/Max if available (they encode both position AND size)
-            // For middle-center anchoring, offsets are relative to parent center
             bool hasOffsets = (unity.OffsetMin != null && unity.OffsetMin.Length >= 2)
                            && (unity.OffsetMax != null && unity.OffsetMax.Length >= 2);
 
             if (hasOffsets)
             {
-                rt.offsetMin = new Vector2(unity.OffsetMin[0] * scaleFactor, unity.OffsetMin[1] * scaleFactor);
-                rt.offsetMax = new Vector2(unity.OffsetMax[0] * scaleFactor, unity.OffsetMax[1] * scaleFactor);
+                ApplyFixedRectFromOffsets(
+                    rt,
+                    anchorMin,
+                    anchorMax,
+                    pivot,
+                    new Vector2(unity.OffsetMin[0] * scaleFactor, unity.OffsetMin[1] * scaleFactor),
+                    new Vector2(unity.OffsetMax[0] * scaleFactor, unity.OffsetMax[1] * scaleFactor));
             }
             else if (unity.SizeDelta != null && unity.SizeDelta.Length >= 2)
             {
+                rt.anchorMin = new Vector2(0.5f, 0.5f);
+                rt.anchorMax = new Vector2(0.5f, 0.5f);
                 rt.sizeDelta = new Vector2(unity.SizeDelta[0] * scaleFactor, unity.SizeDelta[1] * scaleFactor);
             }
 
             // localScale — always [1,1,1]
             rt.localScale = Vector3.one;
+        }
+
+        static Vector2 ReadVector2(float[] values, Vector2 fallback)
+        {
+            if (values == null || values.Length < 2)
+            {
+                return fallback;
+            }
+
+            return new Vector2(values[0], values[1]);
+        }
+
+        static void ApplyFixedRectFromOffsets(
+            RectTransform rt,
+            Vector2 anchorMin,
+            Vector2 anchorMax,
+            Vector2 pivot,
+            Vector2 offsetMin,
+            Vector2 offsetMax)
+        {
+            if (rt == null)
+            {
+                return;
+            }
+
+            RectTransform parentRect = rt.parent as RectTransform;
+            if (parentRect == null)
+            {
+                rt.offsetMin = offsetMin;
+                rt.offsetMax = offsetMax;
+                return;
+            }
+
+            Vector2 parentSize = parentRect.rect.size;
+            Vector2 rawMin = new Vector2(
+                parentSize.x * anchorMin.x + offsetMin.x,
+                parentSize.y * anchorMin.y + offsetMin.y);
+            Vector2 rawMax = new Vector2(
+                parentSize.x * anchorMax.x + offsetMax.x,
+                parentSize.y * anchorMax.y + offsetMax.y);
+
+            Vector2 lower = Vector2.Min(rawMin, rawMax);
+            Vector2 upper = Vector2.Max(rawMin, rawMax);
+            Vector2 size = upper - lower;
+
+            rt.anchorMin = new Vector2(0.5f, 0.5f);
+            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = pivot;
+            rt.sizeDelta = size;
+            rt.anchoredPosition = lower
+                + Vector2.Scale(size, pivot)
+                - parentSize * 0.5f;
         }
 
         /// <summary>
@@ -303,10 +369,17 @@ namespace FigmaImporter
             }
             if (!hasImageComponent && !string.IsNullOrEmpty(element.Asset))
             {
-                AddImageComponent(go, element, sprites, spriteScaleRatio, options, log);
+                AddImageComponent(go, element, sprites, scaleFactor, spriteScaleRatio, options, log);
             }
 
-            if (element.Components == null) return;
+            if (element.Components == null)
+            {
+                if (element.ClipsContent)
+                {
+                    AddClippingComponent(go);
+                }
+                return;
+            }
 
             foreach (string componentName in element.Components)
             {
@@ -319,7 +392,7 @@ namespace FigmaImporter
                         // Skip Image for empty containers — no asset + no visible fill
                         if (string.IsNullOrEmpty(element.Asset) && !HasVisibleFill(element))
                             break;
-                        AddImageComponent(go, element, sprites, spriteScaleRatio, options, log);
+                        AddImageComponent(go, element, sprites, scaleFactor, spriteScaleRatio, options, log);
                         break;
 
                     case "TextMeshProUGUI":
@@ -341,34 +414,39 @@ namespace FigmaImporter
                         break;
                 }
             }
+
+            if (element.ClipsContent)
+            {
+                AddClippingComponent(go);
+            }
         }
 
         static void AddImageComponent(
             GameObject go,
             ElementData element,
             Dictionary<string, Sprite> sprites,
+            float scaleFactor,
             float spriteScaleRatio,
             BuildOptions options,
             List<BuildLogEntry> log)
         {
-            Image image = go.AddComponent<Image>();
+            Image image = null;
 
             // Assign sprite if available
             if (!string.IsNullOrEmpty(element.Asset) && sprites != null)
             {
                 // Fix 3: Try exact key first, then fallback without extension
-                Sprite sprite = null;
-                if (!sprites.TryGetValue(element.Asset, out sprite))
-                {
-                    // Fallback: try with .png extension
-                    string withExt = element.Asset.EndsWith(".png") ? element.Asset : element.Asset + ".png";
-                    string withoutExt = Path.GetFileNameWithoutExtension(element.Asset);
-                    if (!sprites.TryGetValue(withExt, out sprite))
-                        sprites.TryGetValue(withoutExt, out sprite);
-                }
+                Sprite sprite = ResolveSprite(element.Asset, sprites);
 
                 if (sprite != null)
                 {
+                    if (element.AssetBounds != null)
+                    {
+                        AddAssetImageChild(go, element, sprite, scaleFactor, options);
+                        return;
+                    }
+
+                    image = go.AddComponent<Image>();
                     image.sprite = sprite;
                     image.type = Image.Type.Simple;
 
@@ -378,27 +456,44 @@ namespace FigmaImporter
 
                     if (!isStretchH && !isStretchV)
                     {
-                        // Fixed-size element: use PNG native size (includes Figma effects).
-                        // Preserve CENTER position because effects expand equally in
-                        // all directions from the node center.
-                        Vector2 pivotOffset = new Vector2(0.5f - rt.pivot.x, 0.5f - rt.pivot.y);
-                        Vector2 oldCenter = rt.anchoredPosition
-                            + Vector2.Scale(rt.sizeDelta, pivotOffset);
+                        Vector2 manifestSize = rt.sizeDelta;
+                        Vector2 nativeSize = sprite.rect.size * spriteScaleRatio;
 
-                        image.SetNativeSize();
-                        rt.sizeDelta *= spriteScaleRatio;
+                        if (ShouldUseNativeImageSize(element, manifestSize, nativeSize))
+                        {
+                            // Preserve CENTER position when using exported
+                            // render bounds for effects and small icon sprites.
+                            Vector2 pivotOffset = new Vector2(0.5f - rt.pivot.x, 0.5f - rt.pivot.y);
+                            Vector2 oldCenter = rt.anchoredPosition
+                                + Vector2.Scale(rt.sizeDelta, pivotOffset);
 
-                        // Restore center → recalculate anchoredPosition for new size
-                        rt.anchoredPosition = oldCenter
-                            - Vector2.Scale(rt.sizeDelta, pivotOffset);
+                            image.SetNativeSize();
+                            rt.sizeDelta *= spriteScaleRatio;
+
+                            // Restore center → recalculate anchoredPosition for new size
+                            rt.anchoredPosition = oldCenter
+                                - Vector2.Scale(rt.sizeDelta, pivotOffset);
+                        }
+                        else
+                        {
+                            rt.sizeDelta = manifestSize;
+                            LogEntry(log, BuildLogEntry.LogLevel.Warning,
+                                $"{element.Name} — kept manifest size {manifestSize} instead of sprite size {nativeSize}");
+                        }
                     }
                     // Stretch elements: keep manifest offsets (sizeDelta = inset)
                 }
                 else
                 {
+                    image = go.AddComponent<Image>();
                     LogEntry(log, BuildLogEntry.LogLevel.Warning,
                         $"{element.Name} — sprite \"{element.Asset}\" not found in {sprites.Count} loaded sprites");
                 }
+            }
+
+            if (image == null)
+            {
+                image = go.AddComponent<Image>();
             }
 
             // Apply fill color
@@ -418,6 +513,158 @@ namespace FigmaImporter
             // RaycastTarget optimization — only keep for button/mask/bg
             if (options.DisableRaycastTarget && !ShouldKeepRaycast(element))
                 image.raycastTarget = false;
+        }
+
+        static Sprite ResolveSprite(string assetName, Dictionary<string, Sprite> sprites)
+        {
+            if (string.IsNullOrEmpty(assetName) || sprites == null)
+            {
+                return null;
+            }
+
+            Sprite sprite = null;
+            if (sprites.TryGetValue(assetName, out sprite))
+            {
+                return sprite;
+            }
+
+            string withExt = assetName.EndsWith(".png") ? assetName : assetName + ".png";
+            if (sprites.TryGetValue(withExt, out sprite))
+            {
+                return sprite;
+            }
+
+            string withoutExt = Path.GetFileNameWithoutExtension(assetName);
+            sprites.TryGetValue(withoutExt, out sprite);
+            return sprite;
+        }
+
+        static void AddAssetImageChild(
+            GameObject parent,
+            ElementData element,
+            Sprite sprite,
+            float scaleFactor,
+            BuildOptions options)
+        {
+            GameObject imageGO = new GameObject("__Image");
+            imageGO.transform.SetParent(parent.transform, false);
+
+            RectTransform imageRt = imageGO.AddComponent<RectTransform>();
+            imageRt.anchorMin = new Vector2(0.5f, 0.5f);
+            imageRt.anchorMax = new Vector2(0.5f, 0.5f);
+            imageRt.pivot = new Vector2(0.5f, 0.5f);
+            imageRt.localScale = Vector3.one;
+
+            AssetBoundsData bounds = element.AssetBounds;
+            float nodeWidth = element.Rect != null ? element.Rect.W : bounds.W;
+            float nodeHeight = element.Rect != null ? element.Rect.H : bounds.H;
+
+            imageRt.sizeDelta = new Vector2(bounds.W * scaleFactor, bounds.H * scaleFactor);
+            imageRt.anchoredPosition = GetAssetImageAnchoredPosition(element, bounds, nodeWidth, nodeHeight, scaleFactor);
+
+            Image image = imageGO.AddComponent<Image>();
+            image.sprite = sprite;
+            image.type = Image.Type.Simple;
+            image.color = Color.white;
+
+            if (options.DisableRaycastTarget && !ShouldKeepRaycast(element))
+                image.raycastTarget = false;
+        }
+
+        static Vector2 GetAssetImageAnchoredPosition(
+            ElementData element,
+            AssetBoundsData bounds,
+            float nodeWidth,
+            float nodeHeight,
+            float scaleFactor)
+        {
+            return new Vector2(
+                (bounds.X + bounds.W * 0.5f - nodeWidth * 0.5f) * scaleFactor,
+                (nodeHeight * 0.5f - (bounds.Y + bounds.H * 0.5f)) * scaleFactor);
+        }
+
+        static bool ShouldUseNativeImageSize(ElementData element, Vector2 manifestSize, Vector2 nativeSize)
+        {
+            const float absoluteTolerance = 6f;
+            const float ratioTolerance = 0.12f;
+
+            if (ShouldUseExportedNativeBounds(element, manifestSize, nativeSize))
+            {
+                return true;
+            }
+
+            if (manifestSize.x <= 0f || manifestSize.y <= 0f)
+            {
+                return true;
+            }
+
+            if (nativeSize.x > manifestSize.x + absoluteTolerance
+                || nativeSize.y > manifestSize.y + absoluteTolerance)
+            {
+                return true;
+            }
+
+            float deltaX = Mathf.Abs(nativeSize.x - manifestSize.x);
+            float deltaY = Mathf.Abs(nativeSize.y - manifestSize.y);
+            float ratioX = deltaX / Mathf.Max(1f, manifestSize.x);
+            float ratioY = deltaY / Mathf.Max(1f, manifestSize.y);
+
+            return (deltaX <= absoluteTolerance && deltaY <= absoluteTolerance)
+                || (ratioX <= ratioTolerance && ratioY <= ratioTolerance);
+        }
+
+        static bool ShouldUseExportedNativeBounds(ElementData element, Vector2 manifestSize, Vector2 nativeSize)
+        {
+            if (element == null || string.IsNullOrEmpty(element.Asset))
+            {
+                return false;
+            }
+
+            if (nativeSize.x <= 0f || nativeSize.y <= 0f)
+            {
+                return false;
+            }
+
+            if (IsVectorRenderBoundsElement(element))
+            {
+                return true;
+            }
+
+            return IsSmallMergedIconElement(element, manifestSize);
+        }
+
+        static bool IsVectorRenderBoundsElement(ElementData element)
+        {
+            switch (element.FigmaType)
+            {
+                case "VECTOR":
+                case "BOOLEAN_OPERATION":
+                case "LINE":
+                case "POLYGON":
+                case "STAR":
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        static bool IsSmallMergedIconElement(ElementData element, Vector2 manifestSize)
+        {
+            if (!element.Merged)
+            {
+                return false;
+            }
+
+            switch (element.FigmaType)
+            {
+                case "GROUP":
+                case "FRAME":
+                case "INSTANCE":
+                case "COMPONENT":
+                    return manifestSize.x <= 96f && manifestSize.y <= 96f;
+                default:
+                    return false;
+            }
         }
 
         static void AddTextComponent(
@@ -470,9 +717,13 @@ namespace FigmaImporter
             string fontKey = $"{element.Text.FontFamily}|{element.Text.FontStyle}";
             if (fontMapping != null && fontMapping.TryGetValue(fontKey, out TMP_FontAsset mappedFont))
             {
-                fontAsset = mappedFont;
+                if (DoesFontAssetMatchRequest(mappedFont, element.Text.FontFamily, element.Text.FontStyle))
+                {
+                    fontAsset = mappedFont;
+                }
             }
-            else
+
+            if (fontAsset == null)
             {
                 fontAsset = FindFontAsset(element.Text.FontFamily, element.Text.FontStyle);
             }
@@ -490,10 +741,45 @@ namespace FigmaImporter
             // RaycastTarget: text elements ALWAYS disable — text rarely needs raycast
             text.raycastTarget = false;
 
-            // Overflow — disable word wrapping because Figma sizes define the exact
-            // bounding box. TMP rounding can differ by ~2px causing unwanted line breaks.
-            text.overflowMode = TextOverflowModes.Overflow;
-            text.enableWordWrapping = false;
+            bool shouldWrapText = ShouldWrapText(element, scaleFactor);
+            text.overflowMode = TextOverflowModes.Masking;
+            text.enableWordWrapping = shouldWrapText;
+        }
+
+        static void AddClippingComponent(GameObject go)
+        {
+            if (go.GetComponent<RectMask2D>() != null)
+            {
+                return;
+            }
+
+            go.AddComponent<RectMask2D>();
+        }
+
+        static bool ShouldWrapText(ElementData element, float scaleFactor)
+        {
+            if (element?.Text == null)
+            {
+                return false;
+            }
+
+            float fontSize = element.Text.FontSize * Mathf.Max(scaleFactor, 0.0001f);
+            float lineHeight = element.Text.LineHeight.HasValue && element.Text.LineHeight.Value > 0f
+                ? element.Text.LineHeight.Value * Mathf.Max(scaleFactor, 0.0001f)
+                : fontSize * 1.35f;
+
+            float textBoxHeight = 0f;
+            if (element.Unity?.SizeDelta != null && element.Unity.SizeDelta.Length >= 2)
+            {
+                textBoxHeight = Mathf.Abs(element.Unity.SizeDelta[1] * scaleFactor);
+            }
+
+            if (textBoxHeight <= 0f && element.Rect != null)
+            {
+                textBoxHeight = Mathf.Abs(element.Rect.H * scaleFactor);
+            }
+
+            return textBoxHeight >= lineHeight * 1.6f;
         }
 
         // AddLayoutGroup removed — auto-layout components are no longer used.
@@ -539,26 +825,68 @@ namespace FigmaImporter
         {
             if (string.IsNullOrEmpty(family)) return null;
 
-            // Search patterns: "FontFamily-Style", "FontFamily Style", "FontFamily"
-            string[] searchPatterns = new[]
-            {
-                $"{family}-{style}",
-                $"{family} {style}",
-                family
-            };
+            string normalizedFamily = NormalizeFontToken(family);
+            string normalizedStyle = NormalizeFontToken(style);
+            TMP_FontAsset familyFallback = null;
 
-            foreach (string pattern in searchPatterns)
+            string[] guids = AssetDatabase.FindAssets("t:TMP_FontAsset");
+            for (int index = 0; index < guids.Length; index++)
             {
-                string[] guids = AssetDatabase.FindAssets($"t:TMP_FontAsset {pattern}");
-                if (guids.Length > 0)
+                string path = AssetDatabase.GUIDToAssetPath(guids[index]);
+                TMP_FontAsset font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(path);
+                if (font == null) continue;
+
+                string normalizedName = NormalizeFontToken(font.name);
+                if (!normalizedName.Contains(normalizedFamily)) continue;
+
+                if (!string.IsNullOrEmpty(normalizedStyle) && normalizedName.Contains(normalizedStyle))
                 {
-                    string path = AssetDatabase.GUIDToAssetPath(guids[0]);
-                    TMP_FontAsset font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(path);
-                    if (font != null) return font;
+                    return font;
+                }
+
+                if (familyFallback == null)
+                    familyFallback = font;
+            }
+
+            return familyFallback;
+        }
+
+        static bool DoesFontAssetMatchRequest(TMP_FontAsset fontAsset, string family, string style)
+        {
+            if (fontAsset == null) return false;
+
+            string normalizedName = NormalizeFontToken(fontAsset.name);
+            string normalizedFamily = NormalizeFontToken(family);
+            string normalizedStyle = NormalizeFontToken(style);
+
+            if (!normalizedName.Contains(normalizedFamily))
+            {
+                return false;
+            }
+
+            if (string.IsNullOrEmpty(normalizedStyle))
+            {
+                return true;
+            }
+
+            return normalizedName.Contains(normalizedStyle);
+        }
+
+        static string NormalizeFontToken(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return string.Empty;
+
+            var builder = new System.Text.StringBuilder(value.Length);
+            for (int index = 0; index < value.Length; index++)
+            {
+                char character = value[index];
+                if (char.IsLetterOrDigit(character))
+                {
+                    builder.Append(char.ToLowerInvariant(character));
                 }
             }
 
-            return null;
+            return builder.ToString();
         }
 
         // =====================================================================

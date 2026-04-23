@@ -23,6 +23,7 @@ export interface FigmaElement {
     children: string[];
     exportable: boolean; // true if has visual content worth exporting as PNG
     autoLayout?: AutoLayoutProps;
+    clipsContent?: boolean;
 }
 
 /** Text properties extracted from a Figma TEXT node. */
@@ -70,6 +71,16 @@ export interface UnityTransform {
     offsetMin?: [number, number];
     offsetMax?: [number, number];
     localScale: [number, number, number];
+}
+
+export interface AssetBounds {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    pixelWidth: number;
+    pixelHeight: number;
+    exportScale: number;
 }
 
 export interface Style {
@@ -130,10 +141,13 @@ export interface ElementData {
     style?: Style;
     text?: TextProps;
     asset: string | null;
+    assetBounds?: AssetBounds;
     interactive: boolean;
     children: string[];
     merged?: boolean; // true if this element was merged (flattened with children)
     autoLayout?: AutoLayoutProps;
+    visible?: boolean; // omitted when true (all exported elements pass visibility filter)
+    clipsContent?: boolean;
 
 }
 
@@ -157,6 +171,7 @@ export interface ExportOptions {
     includeImages: boolean;
     includeIcons: boolean;
     includeContainers: boolean;
+    disableAutoMerge: boolean;
     slimManifest: boolean; // strip redundant rect/fill for sprite elements
 }
 
@@ -165,6 +180,7 @@ export const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
     includeImages: true,
     includeIcons: true,
     includeContainers: true,
+    disableAutoMerge: false,
     slimManifest: true,
 };
 

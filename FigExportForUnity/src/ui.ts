@@ -36,6 +36,7 @@ var treeState: TreeNodeState[] = [];
 var mergedChildIds = new Set<string>();
 var currentTree: any[] = [];
 var filters = { images: true, icons: true, containers: true };
+var disableAutoMerge = false;
 var previewLocked = true;
 var rootNodeId: string | null = null;
 var originalNames: { nodeId: string; name: string }[] = [];
@@ -54,6 +55,7 @@ var contentEl = document.getElementById('content')!;
 var treePanelEl = document.getElementById('tree-panel')!;
 var treeSearchInput = document.getElementById('tree-search-input') as HTMLInputElement;
 var scaleSelectEl = document.getElementById('scale-select') as HTMLSelectElement;
+var disableAutoMergeEl = document.getElementById('disable-auto-merge') as HTMLInputElement;
 var exportBtnEl = document.getElementById('export-btn') as HTMLButtonElement;
 var selInfoEl = document.getElementById('sel-info')!;
 var progressAreaEl = document.getElementById('progress-area')!;
@@ -69,6 +71,11 @@ var treeSearchTerm = '';
 treeSearchInput.addEventListener('input', function () {
     treeSearchTerm = treeSearchInput.value.trim().toLowerCase();
     renderTree();
+});
+
+disableAutoMergeEl.checked = disableAutoMerge;
+disableAutoMergeEl.addEventListener('change', function () {
+    disableAutoMerge = disableAutoMergeEl.checked;
 });
 
 // Preview panel
@@ -191,6 +198,7 @@ exportBtnEl.addEventListener('click', function () {
                 includeImages: filters.images,
                 includeIcons: filters.icons,
                 includeContainers: filters.containers,
+                disableAutoMerge: disableAutoMerge,
             },
             elementConfigs: configs,
         },
@@ -285,6 +293,10 @@ function applyImportedSettings(data: any) {
         if (typeof data.filters.images === 'boolean') filters.images = data.filters.images;
         if (typeof data.filters.icons === 'boolean') filters.icons = data.filters.icons;
         if (typeof data.filters.containers === 'boolean') filters.containers = data.filters.containers;
+        if (typeof data.filters.disableAutoMerge === 'boolean') {
+            disableAutoMerge = data.filters.disableAutoMerge;
+            disableAutoMergeEl.checked = disableAutoMerge;
+        }
 
         // Update filter chips UI
         document.querySelectorAll('.filter-chip').forEach(function (chip: any) {
@@ -1199,7 +1211,12 @@ function handleExportComplete(manifestJson: string, assets: any[]) {
             var name = currentTree[idx] ? currentTree[idx].name : '';
             return { id: s.id, name: name, excluded: s.excluded, merge: s.merge };
         }),
-        filters: filters,
+        filters: {
+            images: filters.images,
+            icons: filters.icons,
+            containers: filters.containers,
+            disableAutoMerge: disableAutoMerge,
+        },
     };
     var settingsJson = JSON.stringify(settingsData, null, 2);
 

@@ -99,6 +99,7 @@ namespace FigmaImporter
             // Configure packing settings
             var packSettings = atlas.GetPackingSettings();
             packSettings.enableRotation = settings.EnableRotation;
+            packSettings.enableTightPacking = false;
             packSettings.padding = settings.Padding;
             atlas.SetPackingSettings(packSettings);
 

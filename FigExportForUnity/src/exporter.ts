@@ -14,19 +14,25 @@ import type {
     TextProps,
     RGBA,
     Rect,
+    AssetBounds,
     ExportOptions,
     ExportScale,
     ElementConfig,
 
 } from './types';
 import { DEFAULT_EXPORT_OPTIONS, DEFAULT_EXPORT_SCALE } from './types';
-import { traverseNode } from './traverser';
+import { traverseNode, hasVisibleStroke } from './traverser';
 import { mapConstraintsToAnchors, determineComponents, isInteractive } from './mapper';
 import { generateFileName, fallbackName } from './naming';
 
 export interface ExportResult {
     manifest: ManifestData;
     assets: ExportedAsset[];
+}
+
+interface PngExportResult {
+    bytes: Uint8Array;
+    assetBounds: AssetBounds;
 }
 
 /**
@@ -60,7 +66,7 @@ export async function exportDesign(
         if (allElements[i].parentId) {
             parentMap.set(allElements[i].id, allElements[i].parentId!);
         }
-        // Also check Figma locked status as fallback for merge
+        // Figma locked nodes intentionally mean merge=true in this workflow.
         if (!mergeSet.has(allElements[i].id)) {
             var fNode = figma.getNodeById(allElements[i].id);
             if (fNode && 'locked' in fNode && (fNode as any).locked) {
@@ -79,8 +85,21 @@ export async function exportDesign(
 
     // Step 2: Filter elements
     var figmaElements = [];
+    var hiddenSubtreeSet = new Set<string>();
     for (var i = 0; i < allElements.length; i++) {
         var el = allElements[i];
+
+        // Skip hidden elements and their entire subtree
+        // This handles component variant state branches (ON/OFF) where
+        // only the active state is visible in the Figma design.
+        if (el.parentId && hiddenSubtreeSet.has(el.parentId)) {
+            hiddenSubtreeSet.add(el.id);
+            continue;
+        }
+        if (!el.visible && i > 0) {
+            hiddenSubtreeSet.add(el.id);
+            continue;
+        }
 
         // Skip excluded elements
         if (excludeSet.has(el.id)) continue;
@@ -94,15 +113,49 @@ export async function exportDesign(
         figmaElements.push(el);
     }
 
+    const figmaElementById = new Map<string, FigmaElement>();
+    for (var i = 0; i < figmaElements.length; i++) {
+        figmaElementById.set(figmaElements[i].id, figmaElements[i]);
+    }
+
+    const suppressedStateIds = new Set<string>();
+    for (var i = 0; i < figmaElements.length; i++) {
+        var stateParent = figmaElements[i];
+        var stateChildIds = stateParent.children.filter(function (cid) {
+            var child = figmaElementById.get(cid);
+            return child ? isBinaryStateName(child.name) : false;
+        });
+
+        if (stateChildIds.length < 2) continue;
+
+        var chosenStateId = pickActiveStateChild(stateParent, stateChildIds, figmaElementById);
+        for (var s = 0; s < stateChildIds.length; s++) {
+            var stateId = stateChildIds[s];
+            if (stateId === chosenStateId) continue;
+            collectSubtreeIds(stateId, figmaElementById, suppressedStateIds);
+        }
+    }
+
+    if (suppressedStateIds.size > 0) {
+        figmaElements = figmaElements.filter(function (el) {
+            return !suppressedStateIds.has(el.id);
+        });
+    }
+
     // Build parent rect lookup for anchor mapping
     const rectMap = new Map<string, Rect>();
     for (var i = 0; i < figmaElements.length; i++) {
         rectMap.set(figmaElements[i].id, figmaElements[i].rect);
     }
+    const includedElementIds = new Set<string>();
+    for (var i = 0; i < figmaElements.length; i++) {
+        includedElementIds.add(figmaElements[i].id);
+    }
 
     // Step 3: Build manifest elements + collect assets to export
     const elements: ElementData[] = [];
     const assetsToExport: { element: FigmaElement; fileName: string; isMerged: boolean }[] = [];
+    const assetNameCounts = new Map<string, number>();
     const fontMap = new Map<string, Set<string>>();
     const scaleNum = scale.type === 'SCALE' ? scale.value : 1;
 
@@ -112,21 +165,11 @@ export async function exportDesign(
     // Figma GROUPs don't create their own coordinate space — children of a GROUP
     // have coordinates relative to the GROUP's parent (e.g., the FRAME above it).
     // We need to convert these to be relative to the GROUP itself.
-    const typeMap = new Map<string, string>();
-    for (var i = 0; i < figmaElements.length; i++) {
-        typeMap.set(figmaElements[i].id, figmaElements[i].type);
-    }
-
     for (var i = 0; i < figmaElements.length; i++) {
         var el = figmaElements[i];
         var parentRect = el.parentId ? rectMap.get(el.parentId) || rootRect : rootRect;
 
-        // Only subtract parent offset for GROUP children
-        // (GROUP coords are in grandparent space, not parent-local space)
-        var parentType = el.parentId ? typeMap.get(el.parentId) : null;
-        var relativeRect: Rect = (parentType === 'GROUP')
-            ? { x: el.rect.x - parentRect.x, y: el.rect.y - parentRect.y, w: el.rect.w, h: el.rect.h }
-            : el.rect;
+        var relativeRect: Rect = el.rect;
 
         // Pass parent rect with zeroed position (mapper only needs width/height)
         var mappingElement = { ...el, rect: relativeRect };
@@ -149,7 +192,9 @@ export async function exportDesign(
         var shouldExportPng: boolean;
         var isTextAsPng = el.type === 'TEXT' && exportAsPngSet.has(el.id);
         if (!el.parentId) {
-            shouldExportPng = false; // Root never exported
+            // Root is never auto-exported to prevent massive full-screen background PNGs,
+            // unless it is explicitly merged/locked.
+            shouldExportPng = isMerged;
         } else if (el.type === 'TEXT') {
             shouldExportPng = isTextAsPng;
         } else {
@@ -159,6 +204,16 @@ export async function exportDesign(
         var assetFile: string | null = null;
         if (shouldExportPng) {
             var fileName = generateFileName(el, scaleNum, rootNode.name);
+            var duplicateCount = assetNameCounts.get(fileName) || 0;
+            assetNameCounts.set(fileName, duplicateCount + 1);
+
+            if (duplicateCount > 0) {
+                var dotIndex = fileName.lastIndexOf('.');
+                var baseName = dotIndex >= 0 ? fileName.slice(0, dotIndex) : fileName;
+                var extension = dotIndex >= 0 ? fileName.slice(dotIndex) : '';
+                fileName = baseName + '_' + duplicateCount + extension;
+            }
+
             assetFile = fileName;
             assetsToExport.push({
                 element: el, fileName: fileName, isMerged: isMerged,
@@ -179,7 +234,12 @@ export async function exportDesign(
         }
 
         // For merged parents: clear ALL children (fully flattened into parent PNG)
-        var childrenIds = isMerged ? [] : el.children;
+        var childrenIds = isMerged ? [] : el.children.filter(function (cid) {
+            return includedElementIds.has(cid)
+                && !hiddenSubtreeSet.has(cid)
+                && !excludeSet.has(cid)
+                && !mergedChildSet.has(cid);
+        });
 
         // Layout group stripping removed — auto-layout components are no longer generated
 
@@ -217,10 +277,12 @@ export async function exportDesign(
             style: isRoot ? undefined : extractStyle(el),
             text: elementText,
             asset: assetFile,
+            assetBounds: undefined,
             interactive: isInteractive(el),
             children: childrenIds,
             merged: isMerged || undefined,
             autoLayout: el.autoLayout || undefined,
+            clipsContent: el.clipsContent || undefined,
 
         });
     }
@@ -234,7 +296,9 @@ export async function exportDesign(
     const hashToFile = new Map<string, string>();
     // Track element id → actual fileName for dedup back-fill
     const elementIdToFile = new Map<string, string>();
+    const elementIdToAssetBounds = new Map<string, AssetBounds>();
     var dedupCount = 0;
+    var suspiciousExportCount = 0;
 
     for (var i = 0; i < assetsToExport.length; i++) {
         var item = assetsToExport[i];
@@ -248,37 +312,58 @@ export async function exportDesign(
                 // This hides: non-PNG text nodes + all other exportable children
                 // that will have their own separate PNG assets.
                 var hiddenNodes: { node: SceneNode; wasVisible: boolean }[] = [];
+                var unclippedAncestors: { node: { clipsContent: boolean }; wasClipsContent: boolean }[] = [];
                 if (!item.isMerged && 'children' in node) {
                     hideExportableDescendants(
                         node as ChildrenMixin & SceneNode,
                         exportAsPngSet,
+                        mergeSet,
                         hiddenNodes
                     );
                 }
 
+                // Export the node's full Figma-rendered pixels. Ancestor clipping is
+                // represented in Unity by RectMask2D, so baking it into child PNGs
+                // makes scroll/offscreen items permanently cropped.
+                disableAncestorClippingForExport(node as SceneNode, unclippedAncestors);
+
                 var exportScale = scale;
 
-                var bytes: Uint8Array;
+                var exportResult: PngExportResult;
                 try {
-                    bytes = await (node as ExportMixin).exportAsync({
+                    var bytes = await (node as ExportMixin).exportAsync({
                         format: 'PNG',
+                        contentsOnly: true,
                         constraint: { type: exportScale.type, value: exportScale.value },
                     });
+                    exportResult = {
+                        bytes: bytes,
+                        assetBounds: getNativeAssetBounds(node as SceneNode, item.element, bytes, scaleNum),
+                    };
                 } finally {
-                    // Restore visibility
+                    // Restore visibility safely
                     for (var h = 0; h < hiddenNodes.length; h++) {
-                        hiddenNodes[h].node.visible = hiddenNodes[h].wasVisible;
+                        try { hiddenNodes[h].node.visible = hiddenNodes[h].wasVisible; } catch (e) { }
+                    }
+                    for (var c = 0; c < unclippedAncestors.length; c++) {
+                        try { unclippedAncestors[c].node.clipsContent = unclippedAncestors[c].wasClipsContent; } catch (e) { }
                     }
                 }
 
+                if (shouldWarnSuspiciousExport(item.element, exportResult.bytes, scaleNum, node as SceneNode)) {
+                    suspiciousExportCount++;
+                    logSuspiciousExport(item.element, exportResult.bytes, scaleNum);
+                }
+
                 // Compute simple hash (FNV-1a) for dedup
-                var hash = hashBytes(bytes);
+                var hash = hashBytes(exportResult.bytes);
                 var existingFile = hashToFile.get(hash);
 
                 if (existingFile) {
                     // Duplicate detected — reuse existing asset file
                     dedupCount++;
                     elementIdToFile.set(item.element.id, existingFile);
+                    elementIdToAssetBounds.set(item.element.id, exportResult.assetBounds);
                     if (onProgress) onProgress(i + 1, total, 'Skipped duplicate: ' + item.element.name);
 
                     assetEntries.push({
@@ -290,10 +375,11 @@ export async function exportDesign(
                     // New unique asset
                     hashToFile.set(hash, item.fileName);
                     elementIdToFile.set(item.element.id, item.fileName);
+                    elementIdToAssetBounds.set(item.element.id, exportResult.assetBounds);
 
                     assets.push({
                         name: item.fileName,
-                        data: Array.from(bytes),
+                        data: Array.from(exportResult.bytes),
                     });
 
                     assetEntries.push({
@@ -314,10 +400,17 @@ export async function exportDesign(
         if (actualFile && elements[i].asset !== actualFile) {
             elements[i].asset = actualFile;
         }
+        var actualAssetBounds = elementIdToAssetBounds.get(elements[i].id);
+        if (actualAssetBounds) {
+            elements[i].assetBounds = actualAssetBounds;
+        }
     }
 
     if (dedupCount > 0) {
         console.log('[Export] Deduplication: ' + dedupCount + ' duplicate asset(s) skipped');
+    }
+    if (suspiciousExportCount > 0) {
+        console.warn('[Export] Suspicious PNG assets: ' + suspiciousExportCount + ' asset(s) may be clipped or empty');
     }
 
     // Step 5: Build fonts list
@@ -422,7 +515,8 @@ function computeUnityResolution(w: number, h: number, exportScale: number): { w:
 
 function shouldIncludeElement(el: FigmaElement, options: ExportOptions): boolean {
     if (el.type === 'TEXT') return options.includeText;
-    if (el.type === 'VECTOR' || el.type === 'BOOLEAN_OPERATION') return options.includeIcons;
+    if (el.type === 'VECTOR' || el.type === 'BOOLEAN_OPERATION' || el.type === 'LINE'
+        || el.type === 'ELLIPSE' || el.type === 'POLYGON' || el.type === 'STAR') return options.includeIcons;
     var containerTypes = ['FRAME', 'GROUP', 'COMPONENT', 'COMPONENT_SET', 'INSTANCE'];
     if (containerTypes.indexOf(el.type) >= 0 && !el.exportable) return options.includeContainers;
     return options.includeImages;
@@ -437,16 +531,25 @@ function shouldIncludeElement(el: FigmaElement, options: ExportOptions): boolean
 function hideExportableDescendants(
     parent: ChildrenMixin & SceneNode,
     exportAsPngSet: Set<string>,
+    mergeSet: Set<string>,
     hidden: { node: SceneNode; wasVisible: boolean }[]
 ): void {
     for (var i = 0; i < parent.children.length; i++) {
         var child = parent.children[i];
         if (!child.visible) continue;
 
+        // If this child is explicitly MERGED (locked or set in UI), it is a standalone PNG!
+        // We MUST hide it fully so it doesn't bake into parent, and do NOT recurse.
+        if (mergeSet.has(child.id)) {
+            hidden.push({ node: child, wasVisible: true });
+            try { child.visible = false; } catch (e) { }
+            continue;
+        }
+
         // Hide non-PNG text (will be TextMeshPro in Unity)
         if (child.type === 'TEXT' && !exportAsPngSet.has(child.id)) {
             hidden.push({ node: child, wasVisible: true });
-            child.visible = false;
+            try { child.visible = false; } catch (e) { }
             continue;
         }
 
@@ -454,7 +557,7 @@ function hideExportableDescendants(
         // They will get their own PNG assets → don't bake into parent
         if (child.type !== 'TEXT' && isChildExportable(child)) {
             hidden.push({ node: child, wasVisible: true });
-            child.visible = false;
+            try { child.visible = false; } catch (e) { }
             continue;
         }
 
@@ -463,16 +566,34 @@ function hideExportableDescendants(
             hideExportableDescendants(
                 child as ChildrenMixin & SceneNode,
                 exportAsPngSet,
+                mergeSet,
                 hidden
             );
         }
     }
 }
 
+function disableAncestorClippingForExport(
+    node: SceneNode,
+    changed: { node: { clipsContent: boolean }; wasClipsContent: boolean }[]
+): void {
+    var parent = (node as any).parent;
+    while (parent && parent.type !== 'PAGE') {
+        if ('clipsContent' in parent && parent.clipsContent === true) {
+            changed.push({ node: parent as { clipsContent: boolean }, wasClipsContent: true });
+            try { parent.clipsContent = false; } catch (e) { }
+        }
+        parent = parent.parent;
+    }
+}
+
 /** Check if a child node would be exported as its own PNG */
 function isChildExportable(node: SceneNode): boolean {
-    if (node.type === 'VECTOR' || node.type === 'BOOLEAN_OPERATION') return true;
-    if (node.type === 'GROUP') return false;
+    if (node.type === 'VECTOR' || node.type === 'BOOLEAN_OPERATION' || node.type === 'LINE'
+        || node.type === 'ELLIPSE' || node.type === 'POLYGON' || node.type === 'STAR') return true;
+    if (node.type === 'GROUP' || node.type === 'FRAME' || node.type === 'INSTANCE' || node.type === 'COMPONENT') {
+        if (isIconContainer(node)) return true;
+    }
     // Frames/instances with visible fills are exportable
     if ('fills' in node) {
         var fills = (node as any).fills;
@@ -483,6 +604,7 @@ function isChildExportable(node: SceneNode): boolean {
             if (hasVisibleFill) return true;
         }
     }
+    if (hasVisibleStroke(node)) return true;
     return false;
 }
 
@@ -498,4 +620,202 @@ function hashBytes(data: Uint8Array): string {
     }
     // Convert to unsigned 32-bit then hex
     return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+function shouldWarnSuspiciousExport(
+    element: FigmaElement,
+    bytes: Uint8Array,
+    exportScale: number,
+    node?: SceneNode
+): boolean {
+    var pngSize = readPngSize(bytes);
+    if (!pngSize) return true;
+
+    if (pngSize.w <= 1 || pngSize.h <= 1) return true;
+
+    if (node && isVectorLikeRasterNode(node) && hasVisibleStroke(node)) {
+        return false;
+    }
+
+    var expected = getExpectedPngSize(element, exportScale);
+    return pngSize.w < expected.w - 2 || pngSize.h < expected.h - 2;
+}
+
+function logSuspiciousExport(
+    element: FigmaElement,
+    bytes: Uint8Array,
+    exportScale: number
+): void {
+    var expected = getExpectedPngSize(element, exportScale);
+    var pngSize = readPngSize(bytes);
+    var actual = pngSize ? (pngSize.w + 'x' + pngSize.h) : 'unknown';
+    console.warn(
+        '[Export] Suspicious PNG for "' + element.name + '"'
+        + ' node=' + element.id
+        + ' expected~=' + expected.w + 'x' + expected.h
+        + ' actual=' + actual
+    );
+}
+
+function isVectorLikeRasterNode(node: SceneNode): boolean {
+    return node.type === 'VECTOR'
+        || node.type === 'LINE'
+        || node.type === 'ELLIPSE'
+        || node.type === 'RECTANGLE'
+        || node.type === 'POLYGON'
+        || node.type === 'STAR';
+}
+
+function getExpectedPngSize(element: FigmaElement, exportScale: number): { w: number; h: number } {
+    return {
+        w: Math.max(1, Math.round(element.rect.w * exportScale)),
+        h: Math.max(1, Math.round(element.rect.h * exportScale)),
+    };
+}
+
+function readPngSize(bytes: Uint8Array): { w: number; h: number } | null {
+    if (!bytes || bytes.length < 24) return null;
+    if (bytes[0] !== 137 || bytes[1] !== 80 || bytes[2] !== 78 || bytes[3] !== 71) return null;
+
+    var width = (((bytes[16] << 24) >>> 0) | (bytes[17] << 16) | (bytes[18] << 8) | bytes[19]) >>> 0;
+    var height = (((bytes[20] << 24) >>> 0) | (bytes[21] << 16) | (bytes[22] << 8) | bytes[23]) >>> 0;
+    return { w: width, h: height };
+}
+
+interface AbsoluteBounds {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}
+
+function getNativeAssetBounds(
+    node: SceneNode,
+    element: FigmaElement,
+    bytes: Uint8Array,
+    exportScale: number
+): AssetBounds {
+    var layoutBounds = getAbsoluteLayoutBounds(node, element);
+    var renderBounds = getAbsoluteRenderBounds(node, layoutBounds);
+    return normalizeAssetBoundsToPngSize(
+        {
+            x: renderBounds.x - layoutBounds.x,
+            y: renderBounds.y - layoutBounds.y,
+            w: renderBounds.width,
+            h: renderBounds.height,
+            pixelWidth: 0,
+            pixelHeight: 0,
+            exportScale: exportScale,
+        },
+        bytes,
+        exportScale,
+        element
+    );
+}
+
+function normalizeAssetBoundsToPngSize(
+    bounds: AssetBounds,
+    bytes: Uint8Array,
+    exportScale: number,
+    element: FigmaElement
+): AssetBounds {
+    var pngSize = readPngSize(bytes);
+    var scaleValue = exportScale > 0.01 ? exportScale : 1;
+    if (!pngSize) {
+        return {
+            x: bounds.x,
+            y: bounds.y,
+            w: bounds.w,
+            h: bounds.h,
+            pixelWidth: Math.max(1, Math.round(bounds.w * scaleValue)),
+            pixelHeight: Math.max(1, Math.round(bounds.h * scaleValue)),
+            exportScale: exportScale,
+        };
+    }
+
+    var pngWidth = pngSize.w / scaleValue;
+    var pngHeight = pngSize.h / scaleValue;
+    var normalized = {
+        x: bounds.x + (bounds.w - pngWidth) * 0.5,
+        y: bounds.y + (bounds.h - pngHeight) * 0.5,
+        w: pngWidth,
+        h: pngHeight,
+        pixelWidth: pngSize.w,
+        pixelHeight: pngSize.h,
+        exportScale: exportScale,
+    };
+
+    return normalized;
+}
+
+function getAbsoluteLayoutBounds(node: SceneNode, element: FigmaElement): AbsoluteBounds {
+    var rawBounds = (node as any).absoluteBoundingBox;
+    if (isValidAbsoluteBounds(rawBounds)) {
+        return rawBounds as AbsoluteBounds;
+    }
+
+    return {
+        x: element.rect.x,
+        y: element.rect.y,
+        width: element.rect.w,
+        height: element.rect.h,
+    };
+}
+
+function getAbsoluteRenderBounds(node: SceneNode, fallback: AbsoluteBounds): AbsoluteBounds {
+    var rawBounds = (node as any).absoluteRenderBounds;
+    if (isValidAbsoluteBounds(rawBounds)) {
+        return rawBounds as AbsoluteBounds;
+    }
+
+    return fallback;
+}
+
+function isValidAbsoluteBounds(value: any): value is AbsoluteBounds {
+    return !!value
+        && typeof value.x === 'number'
+        && typeof value.y === 'number'
+        && typeof value.width === 'number'
+        && typeof value.height === 'number'
+        && value.width > 0
+        && value.height > 0;
+}
+
+function isBinaryStateName(name: string): boolean {
+    var normalized = (name || '').trim().toUpperCase();
+    return normalized === 'ON' || normalized === 'OFF';
+}
+
+function pickActiveStateChild(
+    parent: FigmaElement,
+    stateChildIds: string[],
+    elementById: Map<string, FigmaElement>
+): string {
+    if (parent.type === 'COMPONENT') {
+        return stateChildIds[0];
+    }
+
+    for (var i = stateChildIds.length - 1; i >= 0; i--) {
+        if (elementById.has(stateChildIds[i])) {
+            return stateChildIds[i];
+        }
+    }
+
+    return stateChildIds[0];
+}
+
+function collectSubtreeIds(
+    rootId: string,
+    elementById: Map<string, FigmaElement>,
+    suppressedIds: Set<string>
+): void {
+    if (suppressedIds.has(rootId)) return;
+    suppressedIds.add(rootId);
+
+    var element = elementById.get(rootId);
+    if (!element || !element.children) return;
+
+    for (var i = 0; i < element.children.length; i++) {
+        collectSubtreeIds(element.children[i], elementById, suppressedIds);
+    }
 }

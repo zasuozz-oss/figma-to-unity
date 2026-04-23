@@ -259,11 +259,6 @@ namespace FigmaImporter
                 EditorGUILayout.Space(4);
             }
 
-            // Sprite output folder
-            DrawSpriteOutputFolder();
-
-            EditorGUILayout.Space(4);
-
             // Font mapping
             DrawFontMapping();
 
@@ -345,6 +340,10 @@ namespace FigmaImporter
             {
                 EditorGUILayout.HelpBox("No FigmaExport folders detected. Use Browse or click ↻ to rescan.", MessageType.Info);
             }
+
+            EditorGUILayout.Space(4);
+            DrawSpriteOutputFolder();
+            EditorGUILayout.Space(4);
 
             // Manual browse fallback
             EditorGUILayout.BeginHorizontal();
@@ -556,34 +555,18 @@ namespace FigmaImporter
             EditorGUILayout.LabelField("📁 Sprite Output", EditorStyles.boldLabel);
 
             EditorGUILayout.BeginHorizontal();
-            string displayFolder = string.IsNullOrEmpty(_spriteOutputFolder)
+            string spriteOutputAssetPath = GetSpriteOutputAssetPath();
+            string displayFolder = string.IsNullOrEmpty(spriteOutputAssetPath)
                 ? "(not set)"
-                : TruncatePath(_spriteOutputFolder, 45);
+                : TruncatePath(spriteOutputAssetPath, 45);
             EditorGUILayout.LabelField(displayFolder, EditorStyles.miniLabel);
 
             if (GUILayout.Button("Browse", GUILayout.Width(60)))
             {
-                // Default to Assets/ folder if current path is outside project
-                string startPath = _spriteOutputFolder;
-                if (string.IsNullOrEmpty(startPath) || !startPath.StartsWith(Application.dataPath))
-                    startPath = Application.dataPath; // .../Assets
-
-                string folder = EditorUtility.OpenFolderPanel(
-                    "Select Sprite Output Folder (must be inside Assets/)", startPath, "");
-                if (!string.IsNullOrEmpty(folder))
-                {
-                    if (folder.StartsWith(Application.dataPath))
-                    {
-                        _spriteOutputFolder = folder;
-                        EditorPrefs.SetString(PREF_SPRITE_FOLDER, _spriteOutputFolder);
-                    }
-                    else
-                    {
-                        EditorUtility.DisplayDialog("Invalid Folder",
-                            "Sprite Output folder must be inside the Unity project's Assets/ directory.",
-                            "OK");
-                    }
-                }
+                Rect buttonRect = GUILayoutUtility.GetLastRect();
+                PopupWindow.Show(
+                    buttonRect,
+                    new SpriteOutputFolderPopup(GetSpriteOutputAssetPath(), SetSpriteOutputFolderFromAssetPath));
             }
 
             if (GUILayout.Button("↻", GUILayout.Width(24)))
@@ -1194,6 +1177,29 @@ namespace FigmaImporter
             return Path.Combine(Application.dataPath, "FigmaImport").Replace('\\', '/');
         }
 
+        string GetSpriteOutputAssetPath()
+        {
+            if (string.IsNullOrEmpty(_spriteOutputFolder))
+                return null;
+
+            string dataPath = Application.dataPath.Replace('\\', '/');
+            string normalizedPath = _spriteOutputFolder.Replace('\\', '/');
+            if (!normalizedPath.StartsWith(dataPath))
+                return null;
+
+            return ("Assets" + normalizedPath.Substring(dataPath.Length)).Replace('\\', '/');
+        }
+
+        void SetSpriteOutputFolderFromAssetPath(string assetPath)
+        {
+            if (string.IsNullOrEmpty(assetPath) || !assetPath.StartsWith("Assets"))
+                return;
+
+            string relativePath = assetPath.Substring("Assets".Length).TrimStart('/');
+            _spriteOutputFolder = Path.Combine(Application.dataPath, relativePath).Replace('\\', '/');
+            EditorPrefs.SetString(PREF_SPRITE_FOLDER, _spriteOutputFolder);
+        }
+
         static string TruncatePath(string path, int maxLength)
         {
             if (path.Length <= maxLength) return path;
@@ -1211,6 +1217,117 @@ namespace FigmaImporter
             while (name.Contains("__"))
                 name = name.Replace("__", "_");
             return name.Trim('_');
+        }
+
+        sealed class SpriteOutputFolderPopup : PopupWindowContent
+        {
+            readonly string _selectedAssetPath;
+            readonly System.Action<string> _onSelected;
+            readonly FolderTreeNode _rootNode;
+            readonly GUIContent _folderIcon;
+            Vector2 _scrollPosition;
+
+            public SpriteOutputFolderPopup(
+                string selectedAssetPath,
+                System.Action<string> onSelected)
+            {
+                _selectedAssetPath = string.IsNullOrEmpty(selectedAssetPath) ? "Assets" : selectedAssetPath;
+                _onSelected = onSelected;
+                _folderIcon = EditorGUIUtility.IconContent("Folder Icon");
+                _rootNode = BuildFolderTree("Assets", _selectedAssetPath);
+            }
+
+            public override Vector2 GetWindowSize()
+            {
+                return new Vector2(360f, 420f);
+            }
+
+            public override void OnGUI(Rect rect)
+            {
+                EditorGUILayout.LabelField("Select Sprite Output Folder", EditorStyles.boldLabel);
+                EditorGUILayout.LabelField(_selectedAssetPath, EditorStyles.miniLabel);
+                EditorGUILayout.Space(6f);
+
+                _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition);
+                DrawNode(_rootNode, 0);
+                EditorGUILayout.EndScrollView();
+            }
+
+            void DrawNode(FolderTreeNode node, int depth)
+            {
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.Space(depth * 14f);
+
+                if (node.Children.Count > 0)
+                {
+                    string foldoutLabel = node.IsExpanded ? "▼" : "▶";
+                    if (GUILayout.Button(foldoutLabel, EditorStyles.label, GUILayout.Width(16f)))
+                    {
+                        node.IsExpanded = !node.IsExpanded;
+                    }
+                }
+                else
+                {
+                    GUILayout.Space(16f);
+                }
+
+                GUIStyle buttonStyle = new GUIStyle(EditorStyles.miniButton)
+                {
+                    alignment = TextAnchor.MiddleLeft,
+                    fontStyle = node.AssetPath == _selectedAssetPath
+                        ? FontStyle.Bold
+                        : FontStyle.Normal
+                };
+
+                if (GUILayout.Button(
+                    new GUIContent(node.Name, _folderIcon.image),
+                    buttonStyle,
+                    GUILayout.ExpandWidth(true)))
+                {
+                    _onSelected?.Invoke(node.AssetPath);
+                    editorWindow.Close();
+                    GUIUtility.ExitGUI();
+                }
+
+                EditorGUILayout.EndHorizontal();
+
+                if (!node.IsExpanded)
+                    return;
+
+                for (int i = 0; i < node.Children.Count; i++)
+                {
+                    DrawNode(node.Children[i], depth + 1);
+                }
+            }
+
+            static FolderTreeNode BuildFolderTree(string assetPath, string selectedAssetPath)
+            {
+                FolderTreeNode node = new FolderTreeNode
+                {
+                    AssetPath = assetPath,
+                    Name = assetPath == "Assets" ? "Assets" : Path.GetFileName(assetPath),
+                    IsExpanded = selectedAssetPath == "Assets"
+                        || selectedAssetPath.StartsWith(assetPath + "/", System.StringComparison.Ordinal)
+                };
+
+                string[] subFolders = AssetDatabase.GetSubFolders(assetPath);
+                System.Array.Sort(subFolders, System.StringComparer.OrdinalIgnoreCase);
+
+                for (int i = 0; i < subFolders.Length; i++)
+                {
+                    node.Children.Add(BuildFolderTree(subFolders[i], selectedAssetPath));
+                }
+
+                return node;
+            }
+        }
+
+        sealed class FolderTreeNode
+        {
+            public string AssetPath;
+            public string Name;
+            public bool IsExpanded;
+            public readonly List<FolderTreeNode> Children = new List<FolderTreeNode>();
         }
     }
 }
