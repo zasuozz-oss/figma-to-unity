@@ -3,7 +3,7 @@
   <p align="center">
     Automated Figma-to-Unity UI converter with AI-powered MCP Bridge
     <br />
-    <strong>🌐 <a href="README.vi.md">Vietnamese</a></strong>
+    <strong>🌐 <a href="README.vi.md">Tiếng Việt</a> · <a href="README.zh.md">中文</a></strong>
     <br />
     <br />
     <a href="#-quick-start">Quick Start</a>
@@ -23,6 +23,8 @@
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/Node.js-%3E%3D20-339933?logo=node.js&logoColor=white" alt="Node.js" /></a>
   <a href="https://modelcontextprotocol.io/"><img src="https://img.shields.io/badge/MCP-Compatible-8B5CF6" alt="MCP" /></a>
 </p>
+
+> **📖 Figma Plugin full reference → [`docs/figma-plugin-guide.md`](docs/figma-plugin-guide.md)**
 
 ---
 
@@ -208,9 +210,6 @@ Copy `UnityFigImporter/` into your Unity project's `Assets/` folder.
 ## 📖 Usage
 
 ### Export from Figma
-
-> [!TIP]
-> For a detailed guide on the UI interface, shortcuts, batch renaming, and advanced resource optimization workflow, please see the full: **[Figma Exporter Plugin User Guide](docs/figma-plugin-guide.md)**.
 
 1. Select the **Frame** you want to export
 2. Run **Plugins** → **Figma to Unity**

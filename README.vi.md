@@ -3,7 +3,7 @@
   <p align="center">
     Công cụ chuyển đổi thiết kế Figma sang Unity UI tự động với MCP Bridge cho AI
     <br />
-    <strong>🌐 <a href="README.md">English</a></strong>
+    <strong>🌐 <a href="README.md">English</a> · <a href="README.zh.md">中文</a></strong>
     <br />
     <br />
     <a href="#-bắt-đầu-nhanh">Bắt Đầu Nhanh</a>
@@ -23,6 +23,8 @@
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/Node.js-%3E%3D20-339933?logo=node.js&logoColor=white" alt="Node.js" /></a>
   <a href="https://modelcontextprotocol.io/"><img src="https://img.shields.io/badge/MCP-Compatible-8B5CF6" alt="MCP" /></a>
 </p>
+
+> **📖 Hướng dẫn đầy đủ Figma Plugin → [`docs/figma-plugin-guide.md`](docs/figma-plugin-guide.md)**
 
 ---
 
@@ -208,8 +210,6 @@ Copy thư mục `UnityFigImporter/` vào `Assets/` trong Unity project.
 ## 📖 Hướng Dẫn Sử Dụng
 
 ### Export từ Figma
-
-> **Hướng dẫn đầy đủ cho plugin** → [`docs/figma-plugin-guide.md`](docs/figma-plugin-guide.md)
 
 1. Chọn **Frame** cần export
 2. Chạy **Plugins** → **Figma to Unity**
