@@ -63,13 +63,20 @@
 | **Import** | Tự động tạo UI hierarchy hoàn chỉnh trong Unity từ manifest |
 | **AI** | MCP Bridge cho phép AI tools đọc Figma design data real-time |
 | **Layout** | Figma Auto Layout → Unity HorizontalLayoutGroup / VerticalLayoutGroup |
-| **Text** | TextMeshPro với auto mapping font, size, color, alignment |
-| **Deduplication** | FNV-1a hash-based loại bỏ PNG trùng lặp |
-| **Sprite Atlas** | Tự động tạo SpriteAtlas từ sprites đã import |
-| **Render Pipeline** | UGUI (Canvas + Image) và 2D Object (SpriteRenderer) |
-| **Scale** | 0.5x, 0.75x, 1x, 1.5x, 2x, 3x, 4x hoặc fixed size (512w, 1024h, ...) |
-| **Per-Element** | Merge, Exclude, PNG rasterize cho từng node |
-| **Minimize** | Thu nhỏ plugin thành thanh trạng thái MCP nhỏ gọn |
+| **Text** | TextMeshPro với tính năng tự động ánh xạ họ font (font family), kiểu font (style), kích thước, màu sắc và căn lề |
+| **Ánh xạ Font** | Tự động phát hiện các họ & kiểu font trong Figma và ánh xạ tới TextMeshPro Font Assets trong Unity |
+| **Deduplication** | Loại bỏ ảnh PNG trùng lặp bằng mã băm FNV-1a — bỏ qua các tài nguyên giống nhau để tối giản dung lượng file ZIP |
+| **Sprite Atlas** | Tự động tạo SpriteAtlas từ các sprite đã import với cấu hình padding (khoảng đệm) & cho phép xoay nâng cao |
+| **Render Pipeline** | Hỗ trợ cả 2 chế độ dựng hình UGUI (Canvas + Image) và 2D Object (SpriteRenderer) |
+| **Scale** | 0.5x, 0.75x, 1x, 1.5x, 2x, 3x, 4x hoặc cố định chiều rộng/cao (512w, 1024h, ...) |
+| **Per-Element** | Các nút điều khiển inline Merge, Exclude, và PNG rasterize để kiểm soát chi tiết từng tài nguyên |
+| **Đổi Tên Hàng Loạt** | Đổi tên hàng loạt layer sang `snake_case` với tùy chọn thêm tiền tố (prefix) tùy biến và tính năng hoàn tác |
+| **Menu Ngữ Cảnh** | Click chuột phải vào layer để Đổi tên nhanh, Bật/tắt Ẩn/Hiện, Bật/tắt Gộp, hoặc Xuất riêng lẻ nhánh con |
+| **Đồng bộ Cấu hình** | Xuất và nhập cấu hình qua file `settings.json` để khôi phục nhanh các thiết lập qua nhiều lần chạy |
+| **Kích thước Window** | Giao diện responsive của plugin với các kích thước cửa sổ S, M, L dựng sẵn |
+| **Minimize** | Thu nhỏ plugin thành thanh trạng thái MCP nhỏ gọn trên màn hình Figma |
+| **Tùy chọn Canvas** | Các preset tỉ lệ Canvas, tùy chọn Tạo Canvas mới hoặc Dùng Canvas có sẵn trong scene, cấu hình Match Width/Height |
+| **Texture Importer** | Thiết lập import ảnh nâng cao (Tự động phát hiện Max Size, tùy chỉnh nén compression, chế độ lọc filter, thư mục đầu ra) |
 
 ---
 
@@ -202,51 +209,82 @@ Copy thư mục `UnityFigImporter/` vào `Assets/` trong Unity project.
 
 ### Export từ Figma
 
+> **Hướng dẫn đầy đủ cho plugin** → [`docs/figma-plugin-guide.md`](docs/figma-plugin-guide.md)
+
 1. Chọn **Frame** cần export
 2. Chạy **Plugins** → **Figma to Unity**
-3. Cấu hình per-element (Merge / PNG / Exclude)
-4. Chọn **Export Scale** (0.5x – 4x hoặc fixed size)
-5. Click **Export** → Download ZIP
+3. *(Tuỳ chọn)* Đổi tên hàng loạt các layer bằng công cụ **Rename** với prefix
+4. Cấu hình per-element (Merge / PNG / Exclude) trong layer tree
+5. Chọn **Export Scale** (0.5x – 4x hoặc fixed size)
+6. Click **▶ Export for Unity** → Download ZIP
 
 ### Import vào Unity
 
-1. Giải nén file ZIP
-2. Mở **Window** → **Figma Importer**
-3. Chọn thư mục chứa `manifest.json`
-4. Cấu hình:
+1. Giải nén file ZIP đã tải về.
+2. Trong Unity, mở **Window** → **Figma Importer**.
+3. Chọn thư mục chứa file `manifest.json`.
+4. Cấu hình các tùy chọn nhập nâng cao trong cửa sổ:
 
-| Tuỳ chọn | Giá trị | Mặc định |
-|:---|:---|:---|
-| **Output Mode** | Scene / Prefab / Both | Scene |
-| **Render Pipeline** | UGUI / Object2D | UGUI |
-| **Canvas Scale** | Auto / 1x / 1.5x / 2x / 3x / 4x / Custom | Auto |
-| **Sprite Atlas** | On / Off | Off |
+| Nhóm Thiết Lập | Tùy Chọn | Mô Tả | Giá Trị / Phạm Vi | Mặc Định |
+|:---|:---|:---|:---|:---|
+| **Đầu Ra** | **Render Pipeline** | Chọn giữa giao diện UI Canvas (UGUI) hoặc sprite 2D trong không gian thế giới | UGUI / Object2D | UGUI |
+| | **Chế Độ Xuất** | Dựng cây UI trong Scene hiện tại, lưu thành Prefab, hoặc cả hai | Scene / Prefab / Both | Scene |
+| **Canvas** | **Canvas Target** | Tạo Canvas mới hoặc gắn vào Canvas có sẵn trong scene | Tạo Mới / Dùng Có Sẵn | Tạo Mới |
+| | **Canvas Scale** | Hệ số tỉ lệ UI so với bản thiết kế gốc trên Figma | Auto / 1x / 1.5x / 2x / 3x / 4x / Custom | Auto |
+| **Thư Mục Xuất** | **Output Folder** | Đường dẫn trong Assets để lưu sprite đã nhập | Nhấn Browse để chọn | `Assets/Sprites/` (tự nhận diện) |
+| **Ánh Xạ Font** | **Font Mapping** | Ánh xạ từng font Figma (Family + Style) sang TMP_FontAsset trong dự án | Ô chọn đối tượng | Tự động theo tên |
+| **Tuỳ Chọn Build** | **Disable Raycast** | Tắt Raycast Target trên các UI element không tương tác | Bật / Tắt | Tắt |
+| | **Scale to Unity** | Tự động co giãn UI element theo độ phân giải Canvas mục tiêu | Bật / Tắt | Bật |
+| **Texture** | **Tự nhận Max Size** | Tự động đặt Max Size của texture theo kích thước PNG thực tế | Bật / Tắt | Bật |
+| | **Filter & Nén** | Cấu hình filter mode và định dạng nén cho sprite | Bilinear/Trilinear/Point & Compressed/HQ/... | Bilinear & Compressed |
+| **Sprite Atlas** | **Tạo Atlas** | Đóng gói tất cả sprite UI đã nhập vào một SpriteAtlas duy nhất | Bật / Tắt | Tắt |
+| | **Atlas Padding** | Khoảng đệm giữa các sprite bên trong atlas | 0 – 8 pixel | 2 px |
 
 5. Click **Build UI**
 
 ### MCP Bridge (AI Tools)
 
-Khi plugin Figma đang mở, MCP Bridge kết nối qua `ws://localhost:1994/ws`. AI tools có thể:
-- Đọc document tree, selection, styles, variables
-- Export screenshots theo node ID
-- Lấy design context và metadata
+Khi plugin Figma đang mở, MCP Bridge kết nối qua `ws://localhost:1994/ws`. AI tools có thể gọi các MCP tool sau:
+
+| Tool | Mô tả |
+|:---|:---|
+| `get_document` | Toàn bộ document tree của Figma page hiện tại |
+| `get_selection` | Các node đang được chọn |
+| `get_node` | Lấy một node cụ thể theo ID |
+| `get_styles` | Tất cả local color và text styles |
+| `get_metadata` | Tên tài liệu, danh sách page, thông tin page hiện tại |
+| `get_design_context` | Cây tóm tắt của selection hiện tại (tối ưu cho AI) |
+| `get_variable_defs` | Tất cả variable collections, modes, và values (design tokens) |
+| `get_screenshot` | Export PNG của node(s) — trả về base64 |
+| `save_screenshots` | Export nhiều node và ghi PNG trực tiếp vào filesystem |
 
 ---
 
 ## 🔧 Điều Khiển Per-Element
 
+### Nút inline (trên mỗi dòng trong layer tree)
+
 | Nút | Chức năng |
 |:---|:---|
-| **Merge** | Gộp parent + children thành 1 PNG duy nhất |
-| **PNG** | Rasterize text node thành PNG thay vì TextMeshPro |
-| **×** | Loại bỏ element khỏi export |
-| **👁** | Ẩn/hiện element trong Figma |
+| **M** — Merge | Gộp element và toàn bộ children thành 1 PNG duy nhất |
+| **P** — PNG | Rasterize text node thành PNG thay vì tạo TextMeshPro component |
+| **×** — Exclude | Loại bỏ element và subtree khỏi export hoàn toàn |
+| **👁** — Visibility | Ẩn/hiện element trong Figma canvas |
+
+### Menu chuột phải (Context menu)
+
+| Mục | Chức năng |
+|:---|:---|
+| ✏️ **Đổi Tên** | Đổi tên element này trực tiếp trong layer tree |
+| 👁 **Bật/Tắt Ẩn Hiện** | Giống nút 👁 inline |
+| 🔗 **Bật/Tắt Gộp** | Giống nút M inline |
+| 📦 **Xuất Element Này** | Xuất riêng subtree của element này thành ZIP độc lập |
 
 ---
 
-## 📐 Constraint → Anchor Mapping
+## 📐 Ánh Xạ Constraint → Anchor
 
-| Figma Constraint | Unity Anchor |
+| Constraint trong Figma | Anchor trong Unity |
 |:---|:---|
 | `LEFT` | `anchorMin.x = 0, anchorMax.x = 0` |
 | `RIGHT` | `anchorMin.x = 1, anchorMax.x = 1` |
@@ -261,13 +299,13 @@ Khi plugin Figma đang mở, MCP Bridge kết nối qua `ws://localhost:1994/ws`
 ## 🔒 Bảo Mật
 
 - Server chỉ bind `localhost:1994` — không expose ra mạng
-- Path traversal protection + exclusive write flag cho file operations
-- Input validation qua [Zod](https://zod.dev/) cho tất cả MCP tool calls
+- Bảo vệ path traversal + exclusive write flag cho thao tác file
+- Kiểm tra đầu vào qua [Zod](https://zod.dev/) cho tất cả MCP tool calls
 - Không có `eval()`, `exec()`, hoặc hardcoded secrets
 
 ---
 
-## 📝 Development
+## 📝 Phát Triển
 
 ```bash
 # Figma Plugin — build một lần
@@ -284,12 +322,12 @@ npx tsc
 
 ---
 
-## 🙏 Credits
+## 🙏 Ghi Công
 
 - MCP Bridge Server dựa trên [figma-mcp-bridge](https://github.com/gethopp/figma-mcp-bridge) bởi **gethopp**
 
 ---
 
-## 📝 License
+## 📝 Giấy Phép
 
 Dự án được phân phối theo [MIT License](LICENSE).

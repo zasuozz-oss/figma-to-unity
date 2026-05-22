@@ -63,13 +63,20 @@
 | **Import** | Auto-creates full UI hierarchy in Unity from manifest |
 | **AI Integration** | MCP Bridge lets AI tools read Figma design data in real-time |
 | **Layout** | Figma Auto Layout → Unity HorizontalLayoutGroup / VerticalLayoutGroup |
-| **Text** | TextMeshPro with auto font, size, color, alignment mapping |
-| **Deduplication** | FNV-1a hash-based PNG deduplication — skips identical assets |
-| **Sprite Atlas** | Auto-creates SpriteAtlas from imported sprites |
-| **Render Pipeline** | UGUI (Canvas + Image) and 2D Object (SpriteRenderer) |
-| **Scale Options** | 0.5x, 0.75x, 1x, 1.5x, 2x, 3x, 4x or fixed size (512w, 1024h, ...) |
-| **Per-Element** | Merge, Exclude, PNG rasterize controls per node |
+| **Text** | TextMeshPro with auto font family, style, size, color, and alignment mapping |
+| **Font Mapping** | Auto-detects Figma font families & styles and maps them to TextMeshPro Font Assets |
+| **Deduplication** | FNV-1a hash-based PNG deduplication — skips identical assets to minimize ZIP size |
+| **Sprite Atlas** | Auto-creates SpriteAtlas from imported sprites with advanced padding & rotation settings |
+| **Render Pipeline** | UGUI (Canvas + Image) and 2D Object (SpriteRenderer) modes |
+| **Scale Options** | 0.5x, 0.75x, 1x, 1.5x, 2x, 3x, 4x or fixed width/height (512w, 1024h, ...) |
+| **Per-Element** | Inline Merge, Exclude, and PNG rasterize controls for ultimate asset control |
+| **Batch Rename** | Batch-rename layers to `snake_case` with optional custom prefix and undo function |
+| **Context Menu** | Right-click layers to inline Rename, Toggle Visibility, Toggle Merge, or Export Subtree |
+| **Settings Sync** | Import and export configurations via `settings.json` to restore settings across runs |
+| **Window Resize** | Responsive plugin UI with S, M, L window size presets |
 | **Minimize Mode** | Collapse plugin into a compact MCP status bar |
+| **Canvas Options** | Canvas Scale presets, Create New or Use Existing canvas, Match Width/Height settings |
+| **Texture Importer** | Advanced texture settings (Compression, filter mode, max size auto-detect, custom output folder) |
 
 ---
 
@@ -202,45 +209,77 @@ Copy `UnityFigImporter/` into your Unity project's `Assets/` folder.
 
 ### Export from Figma
 
+> [!TIP]
+> For a detailed guide on the UI interface, shortcuts, batch renaming, and advanced resource optimization workflow, please see the full: **[Figma Exporter Plugin User Guide](docs/figma-plugin-guide.md)**.
+
 1. Select the **Frame** you want to export
 2. Run **Plugins** → **Figma to Unity**
-3. Configure per-element settings (Merge / PNG / Exclude)
-4. Choose **Export Scale** (0.5x – 4x or fixed size)
-5. Click **Export** → Downloads a ZIP file
+3. *(Optional)* Batch-rename layers with the **Rename** tool and a prefix
+4. Configure per-element settings (Merge / PNG / Exclude) in the layer tree
+5. Choose **Export Scale** (0.5x – 4x or fixed size)
+6. Click **▶ Export for Unity** → Downloads a ZIP file
 
 ### Import into Unity
 
 1. Unzip the exported file
 2. Open **Window** → **Figma Importer**
 3. Select the folder containing `manifest.json`
-4. Configure:
+4. Configure the advanced import options in the window:
 
-| Option | Values | Default |
-|:---|:---|:---|
-| **Output Mode** | Scene / Prefab / Both | Scene |
-| **Render Pipeline** | UGUI / Object2D | UGUI |
-| **Canvas Scale** | Auto / 1x / 1.5x / 2x / 3x / 4x / Custom | Auto |
-| **Sprite Atlas** | On / Off | Off |
+| Setting Category | Option | Description | Values / Range | Default |
+|:---|:---|:---|:---|:---|
+| **Output Settings** | **Render Pipeline** | Choose between Canvas-based UI or World space 2D sprites | UGUI / Object2D | UGUI |
+| | **Output Mode** | Build hierarchy in current active Scene, save as Prefab, or both | Scene / Prefab / Both | Scene |
+| **Canvas Settings** | **Canvas Target** | Target a new Canvas or attach elements to an existing scene Canvas | Create New / Use Existing | Create New |
+| | **Canvas Scale** | Scale factor for the Canvas UI elements relative to Figma design | Auto / 1x / 1.5x / 2x / 3x / 4x / Custom | Auto |
+| **Sprite Output** | **Output Folder** | Absolute/relative path in Assets where imported sprites are stored | Browse and pick any asset folder | `Assets/Sprites/` (auto-detected) |
+| **Font Mapping** | **Font Mapping** | Map each unique Figma Font (Family + Style) to a project TMP_FontAsset | Interactive object fields | Auto-matched by name |
+| **Build Options** | **Disable Raycast** | Turn off Raycast Target on all generated non-interactive UI elements | On / Off | Off (Enabled) |
+| | **Scale to Unity** | Automatically scale UI elements to target Unity reference resolution | On / Off | On |
+| **Texture Import** | **Auto-detect Size**| Set texture Max Size automatically based on PNG dimensions | On / Off | On |
+| | **Filter & Comp** | Configure imported sprite filter mode and texture compression format | Bilinear/Trilinear/Point & Compressed/HQ/etc | Bilinear & Compressed |
+| **Sprite Atlas** | **Create Atlas** | Package all imported UI sprites into a single Unity SpriteAtlas | On / Off | Off |
+| | **Atlas Padding** | Visual padding (spacing) between sprite textures inside the atlas | 0 to 8 pixels | 2 px |
 
 5. Click **Build UI**
 
 ### MCP Bridge (AI Tools)
 
-When the Figma plugin is open, MCP Bridge connects via `ws://localhost:1994/ws`. AI tools can:
-- Read document tree, selection, styles, variables
-- Export screenshots by node ID
-- Get design context and metadata
+When the Figma plugin is open, the MCP Bridge connects via `ws://localhost:1994/ws`. AI tools can call these MCP tools:
+
+| Tool | Description |
+|:---|:---|
+| `get_document` | Full document tree of the current Figma page |
+| `get_selection` | Currently selected nodes |
+| `get_node` | Fetch a specific node by ID |
+| `get_styles` | All local color and text styles |
+| `get_metadata` | Document name, page list, current page info |
+| `get_design_context` | Summarized tree of the current selection (optimized for AI) |
+| `get_variable_defs` | All variable collections, modes, and values (design tokens) |
+| `get_screenshot` | Rasterized PNG export of node(s) — returns base64 |
+| `save_screenshots` | Export multiple nodes and write PNGs directly to the filesystem |
 
 ---
 
 ## 🔧 Per-Element Controls
 
+### Inline buttons (per row in the layer tree)
+
 | Button | Function |
 |:---|:---|
-| **Merge** | Flatten parent + children into a single PNG |
-| **PNG** | Rasterize text node as PNG instead of TextMeshPro |
-| **×** | Exclude element from export |
-| **👁** | Toggle visibility in Figma |
+| **M** — Merge | Flatten this element and all its children into a single PNG |
+| **P** — PNG | Rasterize a text node as PNG instead of generating a TextMeshPro component |
+| **×** — Exclude | Remove the element (and its subtree) from the export entirely |
+| **👁** — Visibility | Toggle the element's visibility in the Figma canvas |
+
+### Right-click context menu
+
+| Item | Function |
+|:---|:---|
+| ✏️ **Rename** | Rename this single element inline |
+| 👁 **Toggle Visibility** | Same as the inline 👁 button |
+| 🔗 **Toggle Merge** | Same as the inline M button |
+| 📦 **Export This Element** | Export only this element's subtree as a standalone ZIP |
 
 ---
 
