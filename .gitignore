@@ -2,6 +2,7 @@
 node_modules/
 package-lock.json
 *.meta
+!UnityFigImporter/**/*.meta
 
 # Environment
 .env
