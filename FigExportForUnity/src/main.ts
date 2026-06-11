@@ -639,6 +639,40 @@ async function handleMcpRequest(req: any): Promise<void> {
                 break;
             }
 
+            case 'export_element': {
+                var exNodeId = (req.nodeIds && req.nodeIds[0]) || '';
+                var exScale = (req.params && req.params.scale) || 2;
+                var exNode = figma.getNodeById(exNodeId) as SceneNode | null;
+                if (!exNode) {
+                    response.error = 'Node not found: ' + exNodeId;
+                    break;
+                }
+
+                // Walk up to nearest valid parent — same rule as handleExport()
+                var exValidTypes = ['FRAME', 'GROUP', 'COMPONENT', 'COMPONENT_SET', 'INSTANCE'];
+                while (!exValidTypes.includes(exNode.type) && exNode.parent && exNode.parent.type !== 'PAGE') {
+                    exNode = exNode.parent as SceneNode;
+                }
+                if (!exValidTypes.includes(exNode.type)) {
+                    response.error = 'Node "' + exNode.name + '" is a ' + exNode.type
+                        + '. Provide a Frame, Group, Component, or Instance.';
+                    break;
+                }
+
+                // Suppress documentchange while exportDesign toggles visibility/clipping
+                suppressDocumentChange = true;
+                try {
+                    var exResult = await exportDesign(exNode, { type: 'SCALE', value: exScale });
+                    response.data = {
+                        manifest: exResult.manifest,
+                        assets: exResult.assets,
+                    };
+                } finally {
+                    setTimeout(function () { suppressDocumentChange = false; }, 300);
+                }
+                break;
+            }
+
             default:
                 response.error = 'Unknown MCP request type: ' + req.type;
         }

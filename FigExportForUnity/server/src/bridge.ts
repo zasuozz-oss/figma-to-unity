@@ -67,7 +67,8 @@ export class Bridge {
   sendWithParams(
     requestType: string,
     nodeIds?: string[],
-    params?: Record<string, unknown>
+    params?: Record<string, unknown>,
+    timeoutMs: number = 30_000
   ): Promise<BridgeResponse> {
     return new Promise((resolve, reject) => {
       if (!this.conn || this.conn.readyState !== WebSocket.OPEN) {
@@ -90,7 +91,7 @@ export class Bridge {
       const timeout = setTimeout(() => {
         this.pending.delete(requestId);
         reject(new Error("Request timed out"));
-      }, 30_000);
+      }, timeoutMs);
 
       this.pending.set(requestId, { resolve, reject, timeout });
 

@@ -21,7 +21,7 @@ import type {
 
 } from './types';
 import { DEFAULT_EXPORT_OPTIONS, DEFAULT_EXPORT_SCALE } from './types';
-import { traverseNode, hasVisibleStroke } from './traverser';
+import { traverseNode, hasVisibleStroke, isIconContainer } from './traverser';
 import { mapConstraintsToAnchors, determineComponents, isInteractive } from './mapper';
 import { generateFileName, fallbackName } from './naming';
 
@@ -67,9 +67,14 @@ export async function exportDesign(
             parentMap.set(allElements[i].id, allElements[i].parentId!);
         }
         // Figma locked nodes intentionally mean merge=true in this workflow.
+        // Icon containers (pure-vector subtrees) auto-merge too: one flattened
+        // PNG instead of dozens of vector-fragment assets. Root is excluded —
+        // it only merges via explicit lock/config.
         if (!mergeSet.has(allElements[i].id)) {
             var fNode = figma.getNodeById(allElements[i].id);
             if (fNode && 'locked' in fNode && (fNode as any).locked) {
+                mergeSet.add(allElements[i].id);
+            } else if (allElements[i].parentId && fNode && isIconContainer(fNode as SceneNode)) {
                 mergeSet.add(allElements[i].id);
             }
         }
@@ -192,9 +197,10 @@ export async function exportDesign(
         var shouldExportPng: boolean;
         var isTextAsPng = el.type === 'TEXT' && exportAsPngSet.has(el.id);
         if (!el.parentId) {
-            // Root is never auto-exported to prevent massive full-screen background PNGs,
-            // unless it is explicitly merged/locked.
-            shouldExportPng = isMerged;
+            // Root exports its own background PNG like any container — children
+            // with their own assets are hidden during export, so the PNG only
+            // contains the root's own fill/stroke/effects.
+            shouldExportPng = el.exportable || isMerged;
         } else if (el.type === 'TEXT') {
             shouldExportPng = isTextAsPng;
         } else {
@@ -399,6 +405,12 @@ export async function exportDesign(
         var actualFile = elementIdToFile.get(elements[i].id);
         if (actualFile && elements[i].asset !== actualFile) {
             elements[i].asset = actualFile;
+        }
+        // Export failed for this element — drop the reference so the manifest
+        // never points at a PNG that was not written.
+        if (!actualFile && elements[i].asset) {
+            console.warn('[Export] Dropping dangling asset ref for "' + elements[i].name + '": ' + elements[i].asset);
+            elements[i].asset = null;
         }
         var actualAssetBounds = elementIdToAssetBounds.get(elements[i].id);
         if (actualAssetBounds) {

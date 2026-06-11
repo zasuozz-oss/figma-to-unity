@@ -66,6 +66,32 @@ export const toolInputSchemas = {
   }),
 } as const;
 
+/**
+ * Input for the export_element MCP tool. Kept OUT of toolInputSchemas on
+ * purpose: that map also validates the follower→leader RPC wire format,
+ * which for export_element only carries nodeIds + scale (outputDir is
+ * resolved locally by whichever instance received the MCP call).
+ */
+export const exportElementInput = z.object({
+  nodeId: figmaNodeId
+    .optional()
+    .describe("Node ID in colon format, e.g. '4029:12345'"),
+  figmaUrl: z
+    .string()
+    .optional()
+    .describe(
+      "Figma URL containing ?node-id=... (alternative to nodeId; nodeId wins if both given)",
+    ),
+  outputDir: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "Directory to write manifest.json + PNG assets into (absolute path, or relative to the MCP server cwd). Defaults to ~/Desktop/FigmaImports/<element-name>. Existing files inside are deleted first.",
+    ),
+  scale: z.number().optional().describe("Export scale (default 2)"),
+});
+
 type ToolName = keyof typeof toolInputSchemas;
 
 /**

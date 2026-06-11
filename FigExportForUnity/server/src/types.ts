@@ -16,6 +16,7 @@ export interface RPCRequest {
   tool: string;
   nodeIds?: string[];
   params?: Record<string, unknown>;
+  timeoutMs?: number;
 }
 
 export interface RPCResponse {

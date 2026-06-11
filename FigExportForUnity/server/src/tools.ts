@@ -1,8 +1,10 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
+import { parseFigmaNodeId } from "./figma-url.js";
 import type { Node } from "./node.js";
-import { toolInputSchemas } from "./schema.js";
+import { exportElementInput, toolInputSchemas } from "./schema.js";
 import type { BridgeResponse } from "./types.js";
 
 type ToolResult = {
@@ -16,7 +18,8 @@ export interface ScreenshotSender {
   sendWithParams(
     requestType: string,
     nodeIds?: string[],
-    params?: Record<string, unknown>
+    params?: Record<string, unknown>,
+    timeoutMs?: number
   ): Promise<BridgeResponse>;
 }
 
@@ -27,6 +30,16 @@ interface ScreenshotExport {
   base64: string;
   width: number;
   height: number;
+}
+
+interface ExportElementAsset {
+  name: string;
+  data: number[];
+}
+
+interface ExportElementPayload {
+  manifest: unknown;
+  assets: ExportElementAsset[];
 }
 
 interface SaveScreenshotItemInput {
@@ -151,6 +164,73 @@ export function registerTools(server: McpServer, node: Node): void {
       }
     }
   );
+
+  server.tool(
+    "export_element",
+    "Export one Figma element (frame/component) through the full Unity export pipeline: writes manifest.json + PNG assets to outputDir, preserving the manifest contract (assetBounds, icon detection, naming, text resolution). Requires the FigExportForUnity plugin to be open in Figma Desktop.",
+    exportElementInput.shape,
+    async ({ nodeId, figmaUrl, outputDir, scale }): Promise<ToolResult> => {
+      try {
+        const resolvedNodeId = parseFigmaNodeId({ nodeId, figmaUrl });
+        // Explicit dir is validated up-front (fail fast); the default dir
+        // needs the element name, which only arrives with the payload.
+        const explicitDir =
+          outputDir !== undefined ? resolveExportDir(outputDir) : null;
+
+        const resp = await node.sendWithParams(
+          "export_element",
+          [resolvedNodeId],
+          scale !== undefined && scale > 0 ? { scale } : undefined,
+          120_000
+        );
+        if (resp.error) {
+          return {
+            content: [{ type: "text", text: resp.error }],
+            isError: true,
+          };
+        }
+
+        const payload = getExportElementPayload(resp.data);
+        const resolvedDir = explicitDir ?? defaultExportDir(payload.manifest);
+
+        await emptyDir(resolvedDir);
+        await writeFile(
+          path.join(resolvedDir, "manifest.json"),
+          JSON.stringify(payload.manifest, null, 2)
+        );
+        for (const asset of payload.assets) {
+          await writeFile(
+            path.join(resolvedDir, asset.name),
+            Buffer.from(asset.data)
+          );
+        }
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                nodeId: resolvedNodeId,
+                outputDir: resolvedDir,
+                assetCount: payload.assets.length,
+                assets: payload.assets.map((a) => a.name),
+              }),
+            },
+          ],
+        };
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: err instanceof Error ? err.message : String(err),
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+  );
 }
 
 export async function executeSaveScreenshots(
@@ -235,6 +315,54 @@ function resolveAndValidateOutputPath(
   return resolvedPath;
 }
 
+/**
+ * Resolve the export directory. Unlike save_screenshots (locked to cwd),
+ * export_element may target a Unity project outside the server cwd, so
+ * absolute paths are allowed. If FIGMA_EXPORT_ROOT is set, the resolved
+ * path must stay inside it.
+ */
+function resolveExportDir(outputDir: string): string {
+  const resolved = path.resolve(process.cwd(), outputDir);
+  const root = process.env.FIGMA_EXPORT_ROOT;
+  if (root) {
+    const resolvedRoot = path.resolve(root);
+    const relative = path.relative(resolvedRoot, resolved);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) {
+      throw new Error(
+        `outputDir must be inside FIGMA_EXPORT_ROOT: ${resolvedRoot}`
+      );
+    }
+  }
+  return resolved;
+}
+
+/**
+ * Default export directory when the caller omits outputDir:
+ * <FIGMA_EXPORT_ROOT or ~/Desktop/FigmaImports>/<sanitized element name>.
+ * Raw exports live OUTSIDE any Unity project; the Unity importer copies
+ * what it needs into Assets/ itself.
+ */
+function defaultExportDir(manifest: unknown): string {
+  const name = (manifest as { screen?: { name?: string } })?.screen?.name;
+  const safe =
+    (name ?? "")
+      .toLowerCase()
+      .replace(/[^a-z0-9-_]+/g, "_")
+      .replace(/^_+|_+$/g, "") || "export";
+  const base =
+    process.env.FIGMA_EXPORT_ROOT ??
+    path.join(os.homedir(), "Desktop", "FigmaImports");
+  return path.join(base, safe);
+}
+
+/** Create dir if missing and delete its current contents (re-export policy). */
+async function emptyDir(dir: string): Promise<void> {
+  await mkdir(dir, { recursive: true });
+  for (const entry of await readdir(dir)) {
+    await rm(path.join(dir, entry), { recursive: true, force: true });
+  }
+}
+
 function inferFormatFromPath(outputPath: string): ExportFormat | null {
   const ext = path.extname(outputPath).toLowerCase();
   switch (ext) {
@@ -289,6 +417,70 @@ function getSingleScreenshotExport(data: unknown): ScreenshotExport {
 
   const screenshot = first as ScreenshotExport;
   return screenshot;
+}
+
+function getExportElementPayload(data: unknown): ExportElementPayload {
+  if (!data || typeof data !== "object") {
+    throw new Error("Malformed export_element payload from plugin");
+  }
+
+  const payload = data as { manifest?: unknown; assets?: unknown };
+  if (
+    !payload.manifest ||
+    typeof payload.manifest !== "object" ||
+    Array.isArray(payload.manifest) ||
+    !Array.isArray(payload.assets)
+  ) {
+    throw new Error("Malformed export_element payload from plugin");
+  }
+
+  const assets: ExportElementAsset[] = [];
+  for (const asset of payload.assets) {
+    if (
+      !asset ||
+      typeof asset !== "object" ||
+      typeof (asset as { name?: unknown }).name !== "string" ||
+      !Array.isArray((asset as { data?: unknown }).data)
+    ) {
+      throw new Error("Malformed export_element asset from plugin");
+    }
+
+    const name = (asset as { name: string }).name;
+    if (!isSafeAssetFileName(name)) {
+      throw new Error(`Unsafe export_element asset filename: ${name}`);
+    }
+
+    const bytes = (asset as { data: unknown[] }).data;
+    for (const byte of bytes) {
+      if (
+        typeof byte !== "number" ||
+        !Number.isInteger(byte) ||
+        byte < 0 ||
+        byte > 255
+      ) {
+        throw new Error(`Malformed byte data for export_element asset: ${name}`);
+      }
+    }
+
+    assets.push({ name, data: bytes as number[] });
+  }
+
+  return { manifest: payload.manifest, assets };
+}
+
+function isSafeAssetFileName(name: string): boolean {
+  const lowerName = name.toLowerCase();
+  return (
+    name.length > 0 &&
+    name !== "." &&
+    name !== ".." &&
+    lowerName !== "manifest.json" &&
+    lowerName.endsWith(".png") &&
+    !name.includes("\0") &&
+    !path.isAbsolute(name) &&
+    !name.includes("/") &&
+    !name.includes("\\")
+  );
 }
 
 async function saveScreenshotItemToFile(

@@ -534,7 +534,7 @@ namespace FigmaImporter
                     // Show Figma design size info
                     if (_manifest?.Screen?.FigmaSize != null)
                     {
-                        float csf = GetCanvasScaleFactor();
+                        float csf = FigmaImportRunner.GetCanvasScaleFactor(_manifest, _canvasSettings);
                         EditorGUILayout.LabelField("",
                             $"Figma: {_manifest.Screen.FigmaSize.W}×{_manifest.Screen.FigmaSize.H}  |  " +
                             $"Export: {_manifest.Screen.ExportScale}x  |  Canvas factor: {csf:F2}x",
@@ -888,103 +888,39 @@ namespace FigmaImporter
 
             try
             {
-                // 1. Import textures
-                Dictionary<string, Sprite> sprites = null;
-
-                if (_buildOptions.ImportTextures)
+                var request = new ImportRequest
                 {
-                    string screenName = SanitizeFolderName(_manifest.Screen?.Name ?? "FigmaImport");
-                    string targetFolder = Path.Combine(_spriteOutputFolder, screenName)
-                        .Replace('\\', '/');
+                    ExportFolder = _exportFolderPath,
+                    OutputMode = _outputMode,
+                    RenderPipeline = _renderPipeline,
+                    PrefabSavePath = _prefabSavePath,
+                    SpriteOutputFolder = _spriteOutputFolder,
+                    BuildOptions = _buildOptions,
+                    TextureSettings = _textureSettings,
+                    AtlasSettings = _atlasSettings,
+                    CanvasSettings = _canvasSettings,
+                    FontMapping = _fontMapping,
+                    OnProgress = (progress, label) =>
+                    {
+                        _buildProgress = progress;
+                        _buildProgressLabel = label;
+                        Repaint();
+                    },
+                };
 
-                    _buildProgressLabel = "Importing textures...";
-                    Repaint();
+                var result = FigmaImportRunner.Run(request);
+                _buildLog.AddRange(result.Log);
 
-                    sprites = TextureImportHelper.ImportTextures(
-                        _exportFolderPath,
-                        targetFolder,
-                        _manifest,
-                        _textureSettings,
-                        (current, total, label) =>
-                        {
-                            _buildProgress = (float)current / total * 0.3f; // 0-30%
-                            _buildProgressLabel = label;
-                        });
-
+                if (result.Success)
+                {
                     _buildLog.Add(new BuildLogEntry(
                         BuildLogEntry.LogLevel.Success,
-                        $"Imported {sprites.Count} textures → {TruncatePath(targetFolder, 40)}"));
-
-                    // Create Sprite Atlas (if enabled)
-                    if (_atlasSettings.CreateAtlas)
-                    {
-                        _buildProgressLabel = "Creating Sprite Atlas...";
-                        Repaint();
-
-                        var atlas = SpriteAtlasHelper.CreateAtlas(
-                            targetFolder, screenName, _atlasSettings, _textureSettings);
-
-                        if (atlas != null)
-                        {
-                            _buildLog.Add(new BuildLogEntry(
-                                BuildLogEntry.LogLevel.Success,
-                                $"SpriteAtlas created: {atlas.name}"));
-                        }
-                    }
+                        $"Build complete! Mode: {_outputMode}"));
                 }
-
-                // 2. Calculate canvas scale factor
-                float canvasScaleFactor = GetCanvasScaleFactor();
-
-                _buildLog.Add(new BuildLogEntry(
-                    BuildLogEntry.LogLevel.Success,
-                    $"Canvas scale: {canvasScaleFactor:F2}x ({_canvasScalePreset})"));
-
-                // 3. Build hierarchy
-                _buildProgressLabel = "Building hierarchy...";
-                Repaint();
-
-                // Get export scale for sprite sizing
-                float exportScale = _manifest.Screen?.ExportScale > 0
-                    ? _manifest.Screen.ExportScale : 1f;
-
-                HierarchyBuilder.Build(
-                    _manifest,
-                    sprites,
-                    _buildOptions,
-                    _renderPipeline,
-                    _outputMode,
-                    _canvasSettings,
-                    _prefabSavePath,
-                    canvasScaleFactor,
-                    exportScale,
-                    _fontMapping,
-                    (current, total, label) =>
-                    {
-                        _buildProgress = 0.3f + (float)current / total * 0.7f; // 30-100%
-                        _buildProgressLabel = label;
-                    },
-                    _buildLog);
-
-                _buildProgress = 1f;
-                _buildProgressLabel = "Done!";
-
-                _buildLog.Add(new BuildLogEntry(
-                    BuildLogEntry.LogLevel.Success,
-                    $"Build complete! Mode: {_outputMode}"));
-            }
-            catch (System.Exception ex)
-            {
-                _buildLog.Add(new BuildLogEntry(
-                    BuildLogEntry.LogLevel.Error,
-                    $"Build failed: {ex.Message}"));
-                Debug.LogException(ex);
             }
             finally
             {
                 _isBuilding = false;
-                EditorUtility.ClearProgressBar();
-                AssetDatabase.Refresh();
                 Repaint();
             }
         }
@@ -1061,29 +997,6 @@ namespace FigmaImporter
         }
 
         /// <summary>
-        /// Calculate canvasScaleFactor = canvasRefH / figmaH (match height).
-        /// </summary>
-        float GetCanvasScaleFactor()
-        {
-            if (_manifest?.Screen?.FigmaSize == null || _manifest.Screen.FigmaSize.H <= 0)
-                return 1f;
-
-            // Use match height: canvasRefH / figmaH
-            float figmaH = _manifest.Screen.FigmaSize.H;
-            float canvasH = _canvasSettings.ReferenceResolution.y;
-
-            if (_canvasSettings.MatchWidthOrHeight < 0.5f)
-            {
-                // Match width
-                float figmaW = _manifest.Screen.FigmaSize.W;
-                float canvasW = _canvasSettings.ReferenceResolution.x;
-                return canvasW > 0 ? canvasW / figmaW : 1f;
-            }
-
-            return canvasH > 0 ? canvasH / figmaH : 1f;
-        }
-
-        /// <summary>
         /// Scan project for all TMP_FontAsset and auto-match with manifest fonts.
         /// </summary>
         void ScanProjectFonts()
@@ -1111,38 +1024,10 @@ namespace FigmaImporter
                 {
                     string key = $"{font.Family}|{style}";
                     // Use existing search logic for auto-match
-                    TMP_FontAsset matched = FindFontInProject(font.Family, style);
+                    TMP_FontAsset matched = FigmaImportRunner.FindFontInProject(font.Family, style);
                     _fontMapping[key] = matched; // null if not found
                 }
             }
-        }
-
-        /// <summary>
-        /// Search project for TMP font matching family + style.
-        /// </summary>
-        static TMP_FontAsset FindFontInProject(string family, string style)
-        {
-            if (string.IsNullOrEmpty(family)) return null;
-
-            string[] patterns = new[]
-            {
-                $"{family}-{style}",
-                $"{family} {style}",
-                family
-            };
-
-            foreach (string pattern in patterns)
-            {
-                string[] guids = AssetDatabase.FindAssets($"t:TMP_FontAsset {pattern}");
-                if (guids.Length > 0)
-                {
-                    string path = AssetDatabase.GUIDToAssetPath(guids[0]);
-                    TMP_FontAsset font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(path);
-                    if (font != null) return font;
-                }
-            }
-
-            return null;
         }
 
         /// <summary>
@@ -1204,19 +1089,6 @@ namespace FigmaImporter
         {
             if (path.Length <= maxLength) return path;
             return "..." + path.Substring(path.Length - maxLength + 3);
-        }
-
-        static string SanitizeFolderName(string name)
-        {
-            char[] invalid = Path.GetInvalidFileNameChars();
-            foreach (char c in invalid)
-                name = name.Replace(c, '_');
-            // Also replace spaces and parentheses
-            name = name.Replace(' ', '_').Replace('(', '_').Replace(')', '_');
-            // Collapse multiple underscores
-            while (name.Contains("__"))
-                name = name.Replace("__", "_");
-            return name.Trim('_');
         }
 
         sealed class SpriteOutputFolderPopup : PopupWindowContent

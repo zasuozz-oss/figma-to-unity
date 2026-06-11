@@ -41,14 +41,15 @@ export class Node {
   sendWithParams(
     requestType: string,
     nodeIds?: string[],
-    params?: Record<string, unknown>
+    params?: Record<string, unknown>,
+    timeoutMs?: number
   ): Promise<BridgeResponse> {
     if (this._role === Role.Leader && this.leader) {
       return this.leader
         .getBridge()
-        .sendWithParams(requestType, nodeIds, params);
+        .sendWithParams(requestType, nodeIds, params, timeoutMs);
     }
-    return this.follower.sendWithParams(requestType, nodeIds, params);
+    return this.follower.sendWithParams(requestType, nodeIds, params, timeoutMs);
   }
 
   async becomeLeader(): Promise<void> {

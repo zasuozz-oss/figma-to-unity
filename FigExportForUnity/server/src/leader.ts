@@ -108,7 +108,8 @@ export class Leader {
         const resp = await this.bridge.sendWithParams(
           rpcReq.tool,
           rpcReq.nodeIds,
-          rpcReq.params
+          rpcReq.params,
+          rpcReq.timeoutMs
         );
 
         this.sendJSON(

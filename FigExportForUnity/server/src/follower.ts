@@ -16,17 +16,19 @@ export class Follower {
   async sendWithParams(
     requestType: string,
     nodeIds?: string[],
-    params?: Record<string, unknown>
+    params?: Record<string, unknown>,
+    timeoutMs: number = 30_000
   ): Promise<BridgeResponse> {
     const rpcReq: RPCRequest = { tool: requestType };
     if (nodeIds && nodeIds.length > 0) rpcReq.nodeIds = nodeIds;
     if (params && Object.keys(params).length > 0) rpcReq.params = params;
+    if (timeoutMs !== 30_000) rpcReq.timeoutMs = timeoutMs;
 
     const response = await fetch(`${this.leaderUrl}/rpc`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(rpcReq),
-      signal: AbortSignal.timeout(35_000),
+      signal: AbortSignal.timeout(timeoutMs + 5_000),
     });
 
     if (!response.ok) {
