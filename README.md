@@ -257,6 +257,22 @@ When the Figma plugin is open, the MCP Bridge connects via `ws://localhost:1994/
 | `get_variable_defs` | All variable collections, modes, and values (design tokens) |
 | `get_screenshot` | Rasterized PNG export of node(s) — returns base64 |
 | `save_screenshots` | Export multiple nodes and write PNGs directly to the filesystem |
+| `export_element` | Export one frame/component through the full Unity pipeline — writes `manifest.json` + PNG assets to disk |
+
+### Agent Workflow — Headless Import via utk
+
+AI agents (Claude Code, Cursor, ...) can run the whole pipeline end-to-end — no ZIP download, no Editor window — by combining the MCP Bridge with [utk (Unity CLI AgentKit)](https://github.com/zasuozz-oss/unity-cli-agentkit), a single-binary CLI that controls the Unity Editor from the terminal:
+
+1. **Export** — call the `export_element` MCP tool with a `figmaUrl` (or `nodeId`). It writes `manifest.json` + PNG assets to `~/Desktop/FigmaImports/<element-name>` (or `$FIGMA_EXPORT_ROOT`), outside the Unity project — the importer copies what it needs into `Assets/` itself.
+2. **Import** — run the headless importer inside the open Unity Editor via utk:
+
+   ```bash
+   utk exec 'return FigmaImporter.FigmaHeadlessImporter.Import("<export-folder>", "Both");'
+   ```
+
+   `Import(exportFolder, outputMode, prefabSavePath, spriteFolder)` — `outputMode` is `Scene`, `Prefab`, or `Both`; prefabs default to `Assets/Prefabs/UI/`. Returns JSON: `{ success, rootName, textureCount, outputMode, log[] }`.
+
+Requirements: Figma Desktop with the plugin open (step 1), and a running Unity Editor connected to utk — install utk, run `utk init` in the Unity project, then verify with `utk status` (step 2).
 
 ---
 

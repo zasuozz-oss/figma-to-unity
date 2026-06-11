@@ -257,6 +257,22 @@ Khi plugin Figma đang mở, MCP Bridge kết nối qua `ws://localhost:1994/ws`
 | `get_variable_defs` | Tất cả variable collections, modes, và values (design tokens) |
 | `get_screenshot` | Export PNG của node(s) — trả về base64 |
 | `save_screenshots` | Export nhiều node và ghi PNG trực tiếp vào filesystem |
+| `export_element` | Export một frame/component qua toàn bộ pipeline Unity — ghi `manifest.json` + PNG assets ra đĩa |
+
+### Agent Workflow — Headless Import qua utk
+
+AI agents (Claude Code, Cursor, ...) có thể chạy toàn bộ pipeline từ đầu đến cuối — không cần tải ZIP, không cần mở Editor window — bằng cách kết hợp MCP Bridge với [utk (Unity CLI AgentKit)](https://github.com/zasuozz-oss/unity-cli-agentkit), một CLI single-binary điều khiển Unity Editor từ terminal:
+
+1. **Export** — gọi MCP tool `export_element` với `figmaUrl` (hoặc `nodeId`). Tool ghi `manifest.json` + PNG assets vào `~/Desktop/FigmaImports/<tên-element>` (hoặc `$FIGMA_EXPORT_ROOT`), nằm ngoài Unity project — importer sẽ tự copy những gì cần vào `Assets/`.
+2. **Import** — chạy headless importer trong Unity Editor đang mở qua utk:
+
+   ```bash
+   utk exec 'return FigmaImporter.FigmaHeadlessImporter.Import("<export-folder>", "Both");'
+   ```
+
+   `Import(exportFolder, outputMode, prefabSavePath, spriteFolder)` — `outputMode` là `Scene`, `Prefab`, hoặc `Both`; prefab mặc định lưu tại `Assets/Prefabs/UI/`. Trả về JSON: `{ success, rootName, textureCount, outputMode, log[] }`.
+
+Yêu cầu: Figma Desktop đang mở plugin (bước 1), và Unity Editor đang chạy đã kết nối utk — cài utk, chạy `utk init` trong Unity project, rồi kiểm tra bằng `utk status` (bước 2).
 
 ---
 
