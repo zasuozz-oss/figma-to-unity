@@ -54,11 +54,9 @@
 - Modify: `FigExportForUnity/server/src/figma-url.ts`
 - Test: `FigExportForUnity/server/src/figma-url.test.ts`
 
-- [ ] **Step 1: Viết test fail** — thêm vào cuối `figma-url.test.ts`:
+- [ ] **Step 1: Viết test fail** — sửa import dòng 2 thành `import { parseFigmaNodeId, buildFigmaUrl } from "./figma-url.js";`, rồi thêm block sau vào cuối `figma-url.test.ts`:
 
 ```ts
-import { buildFigmaUrl } from "./figma-url.js";
-
 describe("buildFigmaUrl", () => {
   test("returns null when fileKey is missing", () => {
     expect(buildFigmaUrl(null, "1:2", "Shop")).toBeNull();
