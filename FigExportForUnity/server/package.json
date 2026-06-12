@@ -12,6 +12,7 @@
   ],
   "scripts": {
     "build": "tsc",
+    "start:standalone": "node dist/standalone.js",
     "test": "bun test src",
     "prepublishOnly": "bun run build"
   },

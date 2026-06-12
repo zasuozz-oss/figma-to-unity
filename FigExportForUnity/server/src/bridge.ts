@@ -105,6 +105,10 @@ export class Bridge {
     });
   }
 
+  isPluginConnected(): boolean {
+    return this.conn !== null && this.conn.readyState === WebSocket.OPEN;
+  }
+
   private nextId(): string {
     this.counter++;
     const now = new Date();

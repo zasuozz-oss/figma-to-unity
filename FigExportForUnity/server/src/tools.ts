@@ -171,52 +171,14 @@ export function registerTools(server: McpServer, node: Node): void {
     exportElementInput.shape,
     async ({ nodeId, figmaUrl, outputDir, scale }): Promise<ToolResult> => {
       try {
-        const resolvedNodeId = parseFigmaNodeId({ nodeId, figmaUrl });
-        // Explicit dir is validated up-front (fail fast); the default dir
-        // needs the element name, which only arrives with the payload.
-        const explicitDir =
-          outputDir !== undefined ? resolveExportDir(outputDir) : null;
-
-        const resp = await node.sendWithParams(
-          "export_element",
-          [resolvedNodeId],
-          scale !== undefined && scale > 0 ? { scale } : undefined,
-          120_000
-        );
-        if (resp.error) {
-          return {
-            content: [{ type: "text", text: resp.error }],
-            isError: true,
-          };
-        }
-
-        const payload = getExportElementPayload(resp.data);
-        const resolvedDir = explicitDir ?? defaultExportDir(payload.manifest);
-
-        await emptyDir(resolvedDir);
-        await writeFile(
-          path.join(resolvedDir, "manifest.json"),
-          JSON.stringify(payload.manifest, null, 2)
-        );
-        for (const asset of payload.assets) {
-          await writeFile(
-            path.join(resolvedDir, asset.name),
-            Buffer.from(asset.data)
-          );
-        }
-
+        const result = await exportElementToDisk(node, {
+          nodeId,
+          figmaUrl,
+          outputDir,
+          scale,
+        });
         return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                nodeId: resolvedNodeId,
-                outputDir: resolvedDir,
-                assetCount: payload.assets.length,
-                assets: payload.assets.map((a) => a.name),
-              }),
-            },
-          ],
+          content: [{ type: "text", text: JSON.stringify(result) }],
         };
       } catch (err) {
         return {
@@ -417,6 +379,76 @@ function getSingleScreenshotExport(data: unknown): ScreenshotExport {
 
   const screenshot = first as ScreenshotExport;
   return screenshot;
+}
+
+export interface ExportElementResult {
+  nodeId: string;
+  outputDir: string;
+  assetCount: number;
+  assets: string[];
+  name: string;
+  nodeCount: number;
+}
+
+/** Reads { name, nodeCount } from a manifest, with safe defaults. */
+export function getManifestSummary(manifest: unknown): {
+  name: string;
+  nodeCount: number;
+} {
+  const m = manifest as { screen?: { name?: string }; elements?: unknown[] };
+  return {
+    name: m?.screen?.name ?? "export",
+    nodeCount: Array.isArray(m?.elements) ? m.elements.length : 0,
+  };
+}
+
+/**
+ * Export core shared by the MCP `export_element` tool and the REST
+ * `/api/export_element` route: calls the plugin, then writes manifest.json
+ * + PNG assets to disk. Throws on any error.
+ */
+export async function exportElementToDisk(
+  sender: ScreenshotSender,
+  input: { nodeId?: string; figmaUrl?: string; outputDir?: string; scale?: number }
+): Promise<ExportElementResult> {
+  const resolvedNodeId = parseFigmaNodeId({
+    nodeId: input.nodeId,
+    figmaUrl: input.figmaUrl,
+  });
+  const explicitDir =
+    input.outputDir !== undefined ? resolveExportDir(input.outputDir) : null;
+
+  const resp = await sender.sendWithParams(
+    "export_element",
+    [resolvedNodeId],
+    input.scale !== undefined && input.scale > 0
+      ? { scale: input.scale }
+      : undefined,
+    120_000
+  );
+  if (resp.error) throw new Error(resp.error);
+
+  const payload = getExportElementPayload(resp.data);
+  const resolvedDir = explicitDir ?? defaultExportDir(payload.manifest);
+  const summary = getManifestSummary(payload.manifest);
+
+  await emptyDir(resolvedDir);
+  await writeFile(
+    path.join(resolvedDir, "manifest.json"),
+    JSON.stringify(payload.manifest, null, 2)
+  );
+  for (const asset of payload.assets) {
+    await writeFile(path.join(resolvedDir, asset.name), Buffer.from(asset.data));
+  }
+
+  return {
+    nodeId: resolvedNodeId,
+    outputDir: resolvedDir,
+    assetCount: payload.assets.length,
+    assets: payload.assets.map((a) => a.name),
+    name: summary.name,
+    nodeCount: summary.nodeCount,
+  };
 }
 
 function getExportElementPayload(data: unknown): ExportElementPayload {

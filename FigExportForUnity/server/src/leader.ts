@@ -1,8 +1,9 @@
 import http from "node:http";
 import type { Duplex } from "node:stream";
+import { buildSelectionInfo } from "./api.js";
 import { Bridge } from "./bridge.js";
 import { validateRpc } from "./schema.js";
-import { executeSaveScreenshots } from "./tools.js";
+import { executeSaveScreenshots, exportElementToDisk } from "./tools.js";
 import type { ExportFormat } from "./tools.js";
 import type { RPCRequest, RPCResponse } from "./types.js";
 import { VERSION } from "./version.js";
@@ -37,6 +38,27 @@ export class Leader {
 
         if (req.url === "/rpc" && req.method === "POST") {
           this.handleRPC(req, res);
+          return;
+        }
+
+        if (req.url === "/api/health" && req.method === "GET") {
+          this.sendJSON(res, 200, {
+            data: {
+              ok: true,
+              version: VERSION,
+              pluginConnected: this.bridge.isPluginConnected(),
+            },
+          });
+          return;
+        }
+
+        if (req.url === "/api/selection" && req.method === "GET") {
+          this.handleSelection(res);
+          return;
+        }
+
+        if (req.url === "/api/export_element" && req.method === "POST") {
+          this.handleExportElement(req, res);
           return;
         }
 
@@ -117,6 +139,43 @@ export class Leader {
           200,
           resp.error ? { error: resp.error } : { data: resp.data }
         );
+      } catch (err) {
+        this.sendJSON(res, 200, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    });
+  }
+
+  private async handleSelection(res: http.ServerResponse): Promise<void> {
+    try {
+      const info = await buildSelectionInfo(this.bridge);
+      this.sendJSON(res, 200, { data: info });
+    } catch (err) {
+      this.sendJSON(res, 200, {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  private handleExportElement(
+    req: http.IncomingMessage,
+    res: http.ServerResponse
+  ): void {
+    let body = "";
+    req.on("data", (chunk: Buffer) => {
+      body += chunk.toString();
+    });
+    req.on("end", async () => {
+      try {
+        const input = JSON.parse(body || "{}") as {
+          nodeId?: string;
+          figmaUrl?: string;
+          outputDir?: string;
+          scale?: number;
+        };
+        const result = await exportElementToDisk(this.bridge, input);
+        this.sendJSON(res, 200, { data: result });
       } catch (err) {
         this.sendJSON(res, 200, {
           error: err instanceof Error ? err.message : String(err),

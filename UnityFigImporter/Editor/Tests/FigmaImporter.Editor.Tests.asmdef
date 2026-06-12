@@ -1,0 +1,15 @@
+{
+    "name": "FigmaImporter.Editor.Tests",
+    "rootNamespace": "FigmaImporter.Tests",
+    "references": [
+        "FigmaImporter.Editor",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": ["Editor"],
+    "excludePlatforms": [],
+    "overrideReferences": true,
+    "precompiledReferences": ["nunit.framework.dll"],
+    "autoReferenced": false,
+    "defineConstraints": ["UNITY_INCLUDE_TESTS"]
+}

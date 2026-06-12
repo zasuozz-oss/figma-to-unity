@@ -548,6 +548,7 @@ async function handleMcpRequest(req: any): Promise<void> {
             case 'get_metadata': {
                 response.data = {
                     fileName: figma.root.name,
+                    fileKey: figma.fileKey ?? null,
                     currentPage: {
                         id: figma.currentPage.id,
                         name: figma.currentPage.name,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseFigmaNodeId } from "./figma-url.js";
+import { buildFigmaUrl, parseFigmaNodeId } from "./figma-url.js";
 
 describe("parseFigmaNodeId", () => {
   test("returns nodeId verbatim when valid colon format", () => {
@@ -29,5 +29,30 @@ describe("parseFigmaNodeId", () => {
 
   test("throws on unparsable URL", () => {
     expect(() => parseFigmaNodeId({ figmaUrl: "not a url" })).toThrow();
+  });
+});
+
+describe("buildFigmaUrl", () => {
+  test("returns null when fileKey is missing", () => {
+    expect(buildFigmaUrl(null, "1:2", "Shop")).toBeNull();
+    expect(buildFigmaUrl(undefined, "1:2", "Shop")).toBeNull();
+  });
+
+  test("builds a design URL with hyphenated node-id and slug", () => {
+    expect(buildFigmaUrl("AbC123", "4029:12345", "Mobile Game UI")).toBe(
+      "https://www.figma.com/design/AbC123/Mobile-Game-UI?node-id=4029-12345"
+    );
+  });
+
+  test("falls back to 'design' slug when name empty", () => {
+    expect(buildFigmaUrl("KeY", "1:2", "")).toBe(
+      "https://www.figma.com/design/KeY/design?node-id=1-2"
+    );
+  });
+
+  test("strips unsafe slug characters", () => {
+    expect(buildFigmaUrl("KeY", "1:2", "Shop / Pack #1")).toBe(
+      "https://www.figma.com/design/KeY/Shop-Pack-1?node-id=1-2"
+    );
   });
 });

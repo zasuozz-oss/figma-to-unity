@@ -20,3 +20,25 @@ export function parseFigmaNodeId(input: { nodeId?: string; figmaUrl?: string }):
 
   throw new Error("Provide nodeId or figmaUrl");
 }
+
+/**
+ * Best-effort canonical Figma design URL. Returns null when fileKey is
+ * unavailable (figma.fileKey can be undefined for unsaved/community files);
+ * callers must still work with the colon node-id alone.
+ */
+export function buildFigmaUrl(
+  fileKey: string | null | undefined,
+  nodeId: string,
+  name?: string
+): string | null {
+  if (!fileKey) return null;
+  const slug =
+    (name ?? "")
+      .trim()
+      .replace(/\s+/g, "-")
+      .replace(/[^A-Za-z0-9-]/g, "")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "") || "design";
+  const hyphenId = nodeId.replace(":", "-");
+  return `https://www.figma.com/design/${fileKey}/${slug}?node-id=${hyphenId}`;
+}

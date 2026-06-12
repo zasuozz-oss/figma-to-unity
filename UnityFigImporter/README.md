@@ -37,6 +37,19 @@ https://github.com/<user>/figma-to-unity.git?path=UnityFig Importer
 
 ---
 
+## Realtime Sync window (`Window > Figma > Sync`)
+
+Sync một element từ Figma vào Unity không cần AI:
+
+1. Mở Figma Desktop + plugin FigExportForUnity.
+2. Mở `Window > Figma > Sync`, bấm **Check** (port mặc định `1994`).
+   Nếu bridge offline, set **Bridge dir** = `FigExportForUnity/server` rồi bấm **Spawn standalone bridge**.
+3. Dán Figma URL hoặc bấm **Use current Figma selection**.
+4. Chọn Output Mode (mặc định `Both`) và bấm **Sync** để tạo prefab; trùng tên thì prefab được replace.
+5. Tùy chọn **Refine with AI** để ghi descriptor và copy prompt bàn giao cho figma-build bước 4-6.
+
+---
+
 ## Tính Năng
 
 - ✅ Parse `manifest.json` v1.0
