@@ -37,22 +37,26 @@ https://github.com/<user>/figma-to-unity.git?path=UnityFig Importer
 
 ---
 
-## Realtime Sync window (`Window > Figma > Sync`)
+## Figma Dashboard (`Window > Figma > Dashboard`)
 
-Sync một element từ Figma vào Unity không cần AI. V2 tách 2 bước: **Sync** chỉ
-export + preview ảnh thật từ Figma vào staging `.unity-figma/` (cạnh `Assets/`,
-Unity bỏ qua folder này); **Build** mới tạo prefab.
+Menu duy nhất của tool. Sync một element từ Figma, xem ngay **kết quả import
+thật của Unity**, rồi mới Build prefab.
 
 1. Mở Figma Desktop + plugin FigExportForUnity.
-2. Mở `Window > Figma > Sync`, bấm **Check** (port mặc định `1994`).
-   Nếu bridge offline, set **Bridge dir** = `FigExportForUnity/server` rồi bấm **Spawn standalone bridge**.
-3. Dán Figma URL hoặc bấm **Use current Figma selection**.
-4. Bấm **Sync (export + preview)** để ghi asset, `manifest.json`, và `preview.png`
-   vào `.unity-figma/<node-id>/`; ảnh preview hiện trong window. Chưa có gì vào `Assets/`.
-5. Chỉnh Output Mode / Prefab Save Path nếu cần, bấm **Build prefab** để tạo prefab;
-   trùng tên thì prefab được replace. Data staging vẫn được giữ lại.
-6. Tab **Library** liệt kê mọi element đã sync: search, tuổi dạng `22m`/`4h`,
-   preview với Zoom/Fit/1:1/lăn chuột, **Build** lại hoặc **Delete** khỏi `.unity-figma`.
+2. Mở `Window > Figma > Dashboard`. Mở foldout **Settings** nếu cần đổi
+   Port (mặc định `1994`, nút **Check**), spawn standalone bridge, Output Mode,
+   Prefab Save Path, Sprite Folder.
+3. Bấm **Use current Figma selection** (hoặc dán URL/node-id) → **Sync**.
+4. Sync = export assets + manifest vào `.unity-figma/<node-id>/` **+ chạy
+   pipeline import thật** (textures vào Sprite Folder, dựng hierarchy offscreen)
+   → render `unity-preview.png`. Detail panel hiện đúng những gì Unity sẽ build —
+   thấy ngay lỗi gộp ảnh / nhầm font / nhầm text để quay lại sửa trên Figma.
+   Toggle **Unity build | Figma** để so với render gốc; log warning/error hiện
+   dưới preview.
+5. Ưng rồi thì bấm **Build** → prefab được tạo (Output Mode trong Settings) và
+   được ping trong Project window. Data staging giữ nguyên.
+6. Cột trái: mọi element đã sync (search, tuổi `22m`/`4h`); chọn để xem lại,
+   **Build** lại hoặc **Delete** (xoá khỏi `.unity-figma`).
 7. Tùy chọn **Refine with AI** sau khi Build để ghi descriptor và copy prompt bàn giao
    cho figma-build bước 4-6.
 

@@ -87,7 +87,8 @@ namespace FigmaImporter
         // Menu item
         // =====================================================================
 
-        [MenuItem("Window/Figma/Import")]
+        // Menu item removed in v3. The Dashboard (FigmaSyncWindow) is the
+        // single entry point. Open this window via FigmaImporterWindow.ShowWindow() if needed.
         public static void ShowWindow()
         {
             var window = GetWindow<FigmaImporterWindow>("Figma → Unity");
@@ -909,13 +910,21 @@ namespace FigmaImporter
                 };
 
                 var result = FigmaImportRunner.Run(request);
+                if (_outputMode == OutputMode.None && result.Root != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(result.Root);
+                    result.Root = null;
+                }
                 _buildLog.AddRange(result.Log);
 
                 if (result.Success)
                 {
+                    var suffix = _outputMode == OutputMode.None
+                        ? " (no scene or prefab output)"
+                        : "";
                     _buildLog.Add(new BuildLogEntry(
                         BuildLogEntry.LogLevel.Success,
-                        $"Build complete! Mode: {_outputMode}"));
+                        $"Build complete! Mode: {_outputMode}{suffix}"));
                 }
             }
             finally

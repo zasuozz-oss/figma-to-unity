@@ -169,4 +169,18 @@ describe("exportElementToDisk includePreview", () => {
       })
     ).rejects.toThrow(/Unsafe/);
   });
+
+  test("rejects plugin asset named unity-preview.png", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "figexp-"));
+    const evil = {
+      manifest: samplePayload.manifest,
+      assets: [{ name: "unity-preview.png", data: [1, 2, 3] }],
+    };
+    await expect(
+      exportElementToDisk(fakeSender(evil), {
+        nodeId: "4029:12345",
+        outputDir: dir,
+      })
+    ).rejects.toThrow(/Unsafe/);
+  });
 });

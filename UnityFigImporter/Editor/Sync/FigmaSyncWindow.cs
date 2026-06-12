@@ -11,12 +11,12 @@ namespace FigmaImporter.Sync
         const string PREF_PORT = "FigmaSync_Port";
         const string PREF_SPRITE_FOLDER = "FigmaImporter_SpriteFolder";
 
-        static readonly string[] Tabs = { "Sync", "Library" };
-        int _tab;
+        static readonly string[] PreviewSources = { "Unity build", "Figma" };
 
         int _port = 1994;
         string _figmaUrl = "";
         string _selectionName = "";
+        bool _showSettings;
         OutputMode _outputMode = OutputMode.Both;
         string _prefabSavePath = "Assets/Prefabs/UI/";
         string _spriteOutputFolder = "";
@@ -25,22 +25,24 @@ namespace FigmaImporter.Sync
         string _status = "";
         bool _statusIsError;
 
-        SyncLibrary.Entry _staged;
-        Texture2D _stagedPreview;
+        string _syncedFolder;
+        string _syncedUrl;
+        List<BuildLogEntry> _lastLog;
         ImportDescriptor.Data _lastImport;
 
         List<SyncLibrary.Entry> _entries = new List<SyncLibrary.Entry>();
         string _search = "";
         SyncLibrary.Entry _selected;
         Texture2D _selectedPreview;
+        int _previewSource;
         float _zoom = 1f;
         bool _fitZoom = true;
         Vector2 _listScroll, _previewScroll;
 
-        [MenuItem("Window/Figma/Sync")]
+        [MenuItem("Window/Figma/Dashboard")]
         public static void Open()
         {
-            GetWindow<FigmaSyncWindow>("Figma Sync");
+            GetWindow<FigmaSyncWindow>("Figma Dashboard");
         }
 
         void OnEnable()
@@ -58,34 +60,50 @@ namespace FigmaImporter.Sync
 
         void OnGUI()
         {
-            _tab = GUILayout.Toolbar(_tab, Tabs);
-            EditorGUILayout.Space(6);
-            if (_tab == 0) DrawSyncTab();
-            else DrawLibraryTab();
+            DrawTopBar();
+            DrawSettings();
+            EditorGUILayout.Space(4);
+            EditorGUILayout.BeginHorizontal();
+            DrawLibraryList();
+            DrawDetail();
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.Space(4);
+            DrawStatus();
         }
 
-        void DrawSyncTab()
+        void DrawTopBar()
         {
-            DrawConnection();
-            EditorGUILayout.Space(6);
-            DrawSource();
-            EditorGUILayout.Space(6);
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button("Use current Figma selection", GUILayout.Width(190)))
+            {
+                if (Client.TryGetSelection(out var sel, out var err))
+                {
+                    _figmaUrl = !string.IsNullOrEmpty(sel.url) ? sel.url : sel.nodeId;
+                    _selectionName = sel.name;
+                    SetStatus($"Selected: {sel.name} ({sel.nodeId})", false);
+                }
+                else SetStatus(err, true);
+            }
+            _figmaUrl = EditorGUILayout.TextField(_figmaUrl);
             using (new EditorGUI.DisabledScope(string.IsNullOrWhiteSpace(_figmaUrl)))
             {
-                if (GUILayout.Button("Sync (export + preview)", GUILayout.Height(32)))
+                if (GUILayout.Button("Sync", GUILayout.Width(60)))
                     DoSync();
             }
-            EditorGUILayout.Space(6);
-            DrawStagedPreview();
-            EditorGUILayout.Space(6);
-            DrawOptions();
-            using (new EditorGUI.DisabledScope(_staged == null))
+            EditorGUILayout.EndHorizontal();
+            if (!string.IsNullOrEmpty(_selectionName))
+                EditorGUILayout.LabelField("Selection", _selectionName);
+        }
+
+        void DrawSettings()
+        {
+            _showSettings = EditorGUILayout.Foldout(_showSettings, "Settings", true);
+            if (!_showSettings) return;
+            using (new EditorGUI.IndentLevelScope())
             {
-                if (GUILayout.Button("Build prefab", GUILayout.Height(32)))
-                    DoBuild(_staged);
+                DrawConnection();
+                DrawOptions();
             }
-            EditorGUILayout.Space(6);
-            DrawStatus();
         }
 
         void DrawConnection()
@@ -114,23 +132,6 @@ namespace FigmaImporter.Sync
             }
         }
 
-        void DrawSource()
-        {
-            _figmaUrl = EditorGUILayout.TextField("Figma URL / node-id", _figmaUrl);
-            if (GUILayout.Button("Use current Figma selection"))
-            {
-                if (Client.TryGetSelection(out var sel, out var err))
-                {
-                    _figmaUrl = !string.IsNullOrEmpty(sel.url) ? sel.url : sel.nodeId;
-                    _selectionName = sel.name;
-                    SetStatus($"Selected: {sel.name} ({sel.nodeId})", false);
-                }
-                else SetStatus(err, true);
-            }
-            if (!string.IsNullOrEmpty(_selectionName))
-                EditorGUILayout.LabelField("Selection", _selectionName);
-        }
-
         void DrawOptions()
         {
             _outputMode = (OutputMode)EditorGUILayout.EnumPopup("Output Mode", _outputMode);
@@ -153,9 +154,9 @@ namespace FigmaImporter.Sync
                 return;
             }
 
-            EditorUtility.DisplayProgressBar("Figma Sync", "Exporting from Figma...", 0.5f);
             try
             {
+                EditorUtility.DisplayProgressBar("Figma Sync", "Exporting from Figma...", 0.3f);
                 var outputDir = SyncLibrary.FolderFor(nodeId);
                 if (!Client.TryExportElement(nodeId, outputDir, out var export, out var err))
                 {
@@ -163,11 +164,27 @@ namespace FigmaImporter.Sync
                     return;
                 }
 
-                _staged = SyncLibrary.Load(export.outputDir);
-                _stagedPreview = SyncLibrary.LoadPreview(_staged);
+                EditorUtility.DisplayProgressBar("Figma Sync", "Importing into Unity preview...", 0.6f);
+                var request = new ImportRequest
+                {
+                    ExportFolder = export.outputDir,
+                    SpriteOutputFolder = _spriteOutputFolder,
+                };
+                var preview = FigmaPreviewRenderer.ImportAndRender(
+                    request, Path.Combine(export.outputDir, "unity-preview.png"));
+                _lastLog = preview.Log;
                 _lastImport = null;
+                _syncedFolder = export.outputDir;
+                _syncedUrl = _figmaUrl;
+
                 RefreshLibrary();
-                SetStatus($"Synced {export.name} ({export.nodeCount} nodes) -> {export.outputDir}", false);
+                Select(_entries.Find(e => e.Folder == export.outputDir)
+                       ?? SyncLibrary.Load(export.outputDir));
+
+                if (preview.Success)
+                    SetStatus($"Synced {export.name} ({export.nodeCount} nodes). Unity preview ready.", false);
+                else
+                    SetStatus($"Synced {export.name} but Unity import failed. See log below.", true);
             }
             finally
             {
@@ -178,7 +195,7 @@ namespace FigmaImporter.Sync
         void DoBuild(SyncLibrary.Entry entry)
         {
             if (entry == null) return;
-            EditorUtility.DisplayProgressBar("Figma Sync", "Building prefab...", 0.5f);
+            EditorUtility.DisplayProgressBar("Figma Sync", "Building...", 0.5f);
             try
             {
                 var request = new ImportRequest
@@ -189,22 +206,45 @@ namespace FigmaImporter.Sync
                     SpriteOutputFolder = _spriteOutputFolder,
                 };
                 var result = FigmaImportRunner.Run(request);
+                if (_outputMode == OutputMode.None && result.Root != null)
+                {
+                    Object.DestroyImmediate(result.Root);
+                    result.Root = null;
+                }
+                _lastLog = result.Log;
                 if (!result.Success)
                 {
                     SetStatus("Build failed: " + string.Join(" | ", result.Log.ConvertAll(e => e.Message)), true);
                     return;
                 }
 
-                var prefabPath = Path.Combine(_prefabSavePath, result.RootName + ".prefab").Replace('\\', '/');
-                _lastImport = new ImportDescriptor.Data
+                bool createsPrefab = _outputMode == OutputMode.Prefab || _outputMode == OutputMode.Both;
+                string prefabPath = createsPrefab
+                    ? ResolvePrefabAssetPath(_prefabSavePath, result.RootName)
+                    : null;
+                GameObject prefab = null;
+                if (createsPrefab)
                 {
-                    name = entry.Name,
-                    nodeId = entry.NodeId,
-                    canonicalUrl = ReferenceEquals(entry, _staged) && !string.IsNullOrEmpty(_figmaUrl) ? _figmaUrl : entry.NodeId,
-                    outputDir = entry.Folder,
-                    prefabPath = prefabPath,
-                };
-                SetStatus($"Built {result.RootName} ({entry.NodeCount} nodes) -> {prefabPath}", false);
+                    prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+                    if (prefab != null) EditorGUIUtility.PingObject(prefab);
+                }
+                _lastImport = prefab != null
+                    ? new ImportDescriptor.Data
+                    {
+                        name = entry.Name,
+                        nodeId = entry.NodeId,
+                        canonicalUrl = entry.Folder == _syncedFolder && !string.IsNullOrEmpty(_syncedUrl)
+                            ? _syncedUrl : entry.NodeId,
+                        outputDir = entry.Folder,
+                        prefabPath = prefabPath,
+                    }
+                    : null;
+                var suffix = prefab != null
+                    ? $" -> {prefabPath}"
+                    : createsPrefab
+                        ? $" but prefab was not found at {prefabPath}"
+                    : $" with Output Mode {_outputMode}; no prefab was created.";
+                SetStatus($"Built {result.RootName} ({entry.NodeCount} nodes){suffix}", prefab == null && createsPrefab);
             }
             finally
             {
@@ -212,31 +252,14 @@ namespace FigmaImporter.Sync
             }
         }
 
-        void DrawStagedPreview()
+        static string ResolvePrefabAssetPath(string savePath, string rootName)
         {
-            if (_staged == null) return;
-            EditorGUILayout.LabelField($"Staged: {_staged.Name} ({_staged.NodeCount} nodes)", EditorStyles.boldLabel);
-            if (_stagedPreview != null)
-            {
-                var rect = GUILayoutUtility.GetRect(256, 256, GUILayout.ExpandWidth(false));
-                GUI.DrawTexture(rect, _stagedPreview, ScaleMode.ScaleToFit);
-            }
-            else
-                EditorGUILayout.LabelField("No preview", EditorStyles.centeredGreyMiniLabel);
-        }
-
-        void DrawStatus()
-        {
-            if (!string.IsNullOrEmpty(_status))
-                EditorGUILayout.HelpBox(_status, _statusIsError ? MessageType.Error : MessageType.Info);
-
-            if (_lastImport != null && GUILayout.Button("Refine with AI (copy prompt + write descriptor)"))
-            {
-                var descPath = Path.Combine(Application.dataPath, "..", "Temp", "figma-last-import.json");
-                ImportDescriptor.Write(Path.GetFullPath(descPath), _lastImport);
-                EditorGUIUtility.systemCopyBuffer = ImportDescriptor.BuildPrompt(_lastImport);
-                SetStatus($"Prompt copied. Descriptor: {Path.GetFullPath(descPath)}", false);
-            }
+            if (string.IsNullOrEmpty(savePath))
+                savePath = "Assets/Prefabs/UI/";
+            savePath = savePath.Replace('\\', '/');
+            if (AssetDatabase.IsValidFolder(savePath) || savePath.EndsWith("/"))
+                return Path.Combine(savePath, rootName + ".prefab").Replace('\\', '/');
+            return savePath.EndsWith(".prefab") ? savePath : savePath + ".prefab";
         }
 
         void RefreshLibrary()
@@ -246,22 +269,8 @@ namespace FigmaImporter.Sync
             {
                 _selected = _entries.Find(e => e.Folder == _selected.Folder);
                 if (_selected == null) _selectedPreview = null;
+                else LoadSelectedPreview();
             }
-            if (_staged != null && _entries.Find(e => e.Folder == _staged.Folder) == null)
-            {
-                _staged = null;
-                _stagedPreview = null;
-            }
-        }
-
-        void DrawLibraryTab()
-        {
-            EditorGUILayout.BeginHorizontal();
-            DrawLibraryList();
-            DrawLibraryDetail();
-            EditorGUILayout.EndHorizontal();
-            EditorGUILayout.Space(6);
-            DrawStatus();
         }
 
         void DrawLibraryList()
@@ -288,17 +297,26 @@ namespace FigmaImporter.Sync
         void Select(SyncLibrary.Entry entry)
         {
             _selected = entry;
-            _selectedPreview = SyncLibrary.LoadPreview(entry);
+            _previewSource = entry != null && entry.UnityPreviewPath != null ? 0 : 1;
+            LoadSelectedPreview();
             _fitZoom = true;
             Repaint();
         }
 
-        void DrawLibraryDetail()
+        void LoadSelectedPreview()
+        {
+            _selectedPreview = null;
+            if (_selected == null) return;
+            var path = _previewSource == 0 ? _selected.UnityPreviewPath : _selected.PreviewPath;
+            _selectedPreview = SyncLibrary.LoadTexture(path);
+        }
+
+        void DrawDetail()
         {
             EditorGUILayout.BeginVertical();
             if (_selected == null)
             {
-                EditorGUILayout.HelpBox("Select a synced element on the left.", MessageType.Info);
+                EditorGUILayout.HelpBox("Sync an element or select one on the left.", MessageType.Info);
                 EditorGUILayout.EndVertical();
                 return;
             }
@@ -306,6 +324,25 @@ namespace FigmaImporter.Sync
             EditorGUILayout.LabelField(_selected.Name, EditorStyles.boldLabel);
             EditorGUILayout.LabelField(_selected.ManifestPath, EditorStyles.miniLabel);
             EditorGUILayout.LabelField($"Last synced: {_selected.SyncedAtUtc.ToLocalTime():yyyy-MM-dd HH:mm}", EditorStyles.miniLabel);
+
+            EditorGUILayout.BeginHorizontal();
+            if (_selected.UnityPreviewPath != null)
+            {
+                int newSource = GUILayout.Toolbar(_previewSource, PreviewSources, GUILayout.Width(180));
+                if (newSource != _previewSource)
+                {
+                    _previewSource = newSource;
+                    LoadSelectedPreview();
+                    _fitZoom = true;
+                }
+            }
+            else
+            {
+                _previewSource = 1;
+                GUILayout.Label("No Unity preview yet - press Sync to generate.", EditorStyles.miniLabel);
+            }
+            GUILayout.FlexibleSpace();
+            EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.BeginHorizontal();
             var newZoom = EditorGUILayout.Slider($"Zoom: {(int)(_zoom * 100)}%", _zoom, 0.1f, 2f);
@@ -316,6 +353,7 @@ namespace FigmaImporter.Sync
             EditorGUILayout.EndHorizontal();
 
             DrawZoomPreview();
+            DrawLog();
 
             EditorGUILayout.BeginHorizontal();
             if (GUILayout.Button("Build", GUILayout.Height(26))) DoBuild(_selected);
@@ -364,6 +402,31 @@ namespace FigmaImporter.Sync
             _previewScroll = GUI.BeginScrollView(area, _previewScroll, new Rect(0, 0, w, h));
             GUI.DrawTexture(new Rect(0, 0, w, h), _selectedPreview, ScaleMode.StretchToFill);
             GUI.EndScrollView();
+        }
+
+        void DrawLog()
+        {
+            if (_lastLog == null) return;
+            foreach (var entry in _lastLog)
+            {
+                if (entry.Level == BuildLogEntry.LogLevel.Success) continue;
+                EditorGUILayout.HelpBox(entry.Message,
+                    entry.Level == BuildLogEntry.LogLevel.Error ? MessageType.Error : MessageType.Warning);
+            }
+        }
+
+        void DrawStatus()
+        {
+            if (!string.IsNullOrEmpty(_status))
+                EditorGUILayout.HelpBox(_status, _statusIsError ? MessageType.Error : MessageType.Info);
+
+            if (_lastImport != null && GUILayout.Button("Refine with AI (copy prompt + write descriptor)"))
+            {
+                var descPath = Path.Combine(Application.dataPath, "..", "Temp", "figma-last-import.json");
+                ImportDescriptor.Write(Path.GetFullPath(descPath), _lastImport);
+                EditorGUIUtility.systemCopyBuffer = ImportDescriptor.BuildPrompt(_lastImport);
+                SetStatus($"Prompt copied. Descriptor: {Path.GetFullPath(descPath)}", false);
+            }
         }
 
         void SetStatus(string msg, bool isError)

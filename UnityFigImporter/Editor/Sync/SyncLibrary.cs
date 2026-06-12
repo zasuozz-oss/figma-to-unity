@@ -16,6 +16,7 @@ namespace FigmaImporter.Sync
             public string NodeId;
             public string ManifestPath;
             public string PreviewPath;
+            public string UnityPreviewPath;
             public int NodeCount;
             public DateTime SyncedAtUtc;
         }
@@ -53,6 +54,7 @@ namespace FigmaImporter.Sync
                 var manifest = JObject.Parse(File.ReadAllText(manifestPath));
                 var elements = manifest["elements"] as JArray;
                 var previewPath = Path.Combine(folder, "preview.png");
+                var unityPreviewPath = Path.Combine(folder, "unity-preview.png");
                 return new Entry
                 {
                     Folder = folder,
@@ -60,6 +62,7 @@ namespace FigmaImporter.Sync
                     NodeId = Path.GetFileName(folder).Replace('-', ':'),
                     ManifestPath = manifestPath,
                     PreviewPath = File.Exists(previewPath) ? previewPath : null,
+                    UnityPreviewPath = File.Exists(unityPreviewPath) ? unityPreviewPath : null,
                     NodeCount = elements != null ? elements.Count : 0,
                     SyncedAtUtc = File.GetLastWriteTimeUtc(manifestPath),
                 };
@@ -76,16 +79,18 @@ namespace FigmaImporter.Sync
                 Directory.Delete(entry.Folder, true);
         }
 
-        public static Texture2D LoadPreview(Entry entry)
+        public static Texture2D LoadTexture(string path)
         {
-            if (entry == null || entry.PreviewPath == null || !File.Exists(entry.PreviewPath))
-                return null;
+            if (path == null || !File.Exists(path)) return null;
             var tex = new Texture2D(2, 2);
-            if (tex.LoadImage(File.ReadAllBytes(entry.PreviewPath)))
+            if (tex.LoadImage(File.ReadAllBytes(path)))
                 return tex;
             UnityEngine.Object.DestroyImmediate(tex);
             return null;
         }
+
+        public static Texture2D LoadPreview(Entry entry) =>
+            entry == null ? null : LoadTexture(entry.PreviewPath);
 
         /// <summary>"0m", "22m", "4h", "3d" - relative age for the Library list.</summary>
         public static string FormatAge(DateTime utc)

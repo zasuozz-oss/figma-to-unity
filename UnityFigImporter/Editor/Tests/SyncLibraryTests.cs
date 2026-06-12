@@ -72,6 +72,17 @@ namespace FigmaImporter.Tests
         }
 
         [Test]
+        public void List_PopulatesUnityPreviewPath()
+        {
+            WriteManifest("7-8", "{\"screen\":{\"name\":\"Hud\"},\"elements\":[]}");
+            File.WriteAllBytes(Path.Combine(_root, "7-8", "unity-preview.png"), new byte[] { 1 });
+            var entries = SyncLibrary.List(_root);
+            Assert.AreEqual(1, entries.Count);
+            StringAssert.EndsWith("unity-preview.png", entries[0].UnityPreviewPath);
+            Assert.IsNull(entries[0].PreviewPath);
+        }
+
+        [Test]
         public void FormatAge_MinutesHoursDays()
         {
             Assert.AreEqual("0m", SyncLibrary.FormatAge(DateTime.UtcNow));

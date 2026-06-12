@@ -581,6 +581,7 @@ function isSafeAssetFileName(name: string): boolean {
     name !== ".." &&
     lowerName !== "manifest.json" &&
     lowerName !== "preview.png" &&
+    lowerName !== "unity-preview.png" &&
     lowerName.endsWith(".png") &&
     !name.includes("\0") &&
     !path.isAbsolute(name) &&

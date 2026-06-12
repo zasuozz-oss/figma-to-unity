@@ -52,7 +52,9 @@ namespace FigmaImporter
     {
         Scene,
         Prefab,
-        Both
+        Both,
+        /// <summary>Build hierarchy only - no scene canvas, no prefab. Used for Sync preview.</summary>
+        None
     }
 
     /// <summary>

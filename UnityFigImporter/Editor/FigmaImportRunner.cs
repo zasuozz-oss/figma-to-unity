@@ -34,6 +34,8 @@ namespace FigmaImporter
         public string RootName;
         public int TextureCount;
         public List<BuildLogEntry> Log = new List<BuildLogEntry>();
+        /// <summary>Transient scene object - only set for the caller to render/destroy. Not an asset.</summary>
+        public GameObject Root;
     }
 
     public static class FigmaImportRunner
@@ -132,6 +134,7 @@ namespace FigmaImporter
                         Report(req, 0.3f + (float)current / total * 0.7f, label), // 30-100%
                     result.Log);
 
+                result.Root = req.OutputMode == OutputMode.None ? root : null;
                 result.RootName = root != null ? root.name : null;
                 result.Success = root != null
                     && !result.Log.Exists(e => e.Level == BuildLogEntry.LogLevel.Error);

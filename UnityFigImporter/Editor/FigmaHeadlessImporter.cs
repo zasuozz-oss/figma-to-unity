@@ -32,7 +32,7 @@ namespace FigmaImporter
                 return JsonConvert.SerializeObject(new
                 {
                     success = false,
-                    log = new[] { $"Error: invalid outputMode '{outputMode}'. Use Scene, Prefab, or Both." },
+                    log = new[] { $"Error: invalid outputMode '{outputMode}'. Use Scene, Prefab, Both, or None." },
                 });
             }
 
@@ -45,6 +45,11 @@ namespace FigmaImporter
             };
 
             var result = FigmaImportRunner.Run(request);
+            if (mode == OutputMode.None && result.Root != null)
+            {
+                Object.DestroyImmediate(result.Root);
+                result.Root = null;
+            }
 
             return JsonConvert.SerializeObject(new
             {
