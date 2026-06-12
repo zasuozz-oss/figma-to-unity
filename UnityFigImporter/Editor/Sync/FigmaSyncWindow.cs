@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
 using FigmaImporter;
+using FigmaImporter.Data;
 using UnityEditor;
 using UnityEngine;
 
@@ -37,7 +38,14 @@ namespace FigmaImporter.Sync
         int _previewSource;
         float _zoom = 1f;
         bool _fitZoom = true;
-        Vector2 _listScroll, _previewScroll;
+        Vector2 _listScroll, _previewScroll, _nodeTreeScroll;
+
+        struct NodeRow
+        {
+            public int Depth;
+            public string Label;
+        }
+        readonly List<NodeRow> _nodeTree = new List<NodeRow>();
 
         [MenuItem("Window/Figma/Dashboard")]
         public static void Open()
@@ -269,6 +277,7 @@ namespace FigmaImporter.Sync
                 _selected = _entries.Find(e => e.Folder == _selected.Folder);
                 if (_selected == null) _selectedPreview = null;
                 else LoadSelectedPreview();
+                BuildNodeTree();
             }
         }
 
@@ -298,8 +307,46 @@ namespace FigmaImporter.Sync
             _selected = entry;
             _previewSource = entry != null && entry.UnityPreviewPath != null ? 0 : 1;
             LoadSelectedPreview();
+            BuildNodeTree();
             _fitZoom = true;
             Repaint();
+        }
+
+        void BuildNodeTree()
+        {
+            _nodeTree.Clear();
+            if (_selected == null || string.IsNullOrEmpty(_selected.ManifestPath)
+                || !File.Exists(_selected.ManifestPath))
+                return;
+
+            var manifest = ManifestParser.ParseFromFile(_selected.ManifestPath);
+            if (manifest?.Elements == null) return;
+
+            var byId = new Dictionary<string, ElementData>();
+            foreach (var element in manifest.Elements)
+                if (!string.IsNullOrEmpty(element.Id) && !byId.ContainsKey(element.Id))
+                    byId[element.Id] = element;
+
+            var visited = new HashSet<string>();
+            foreach (var element in manifest.Elements)
+                if (string.IsNullOrEmpty(element.ParentId))
+                    AppendNodeRows(element, byId, 0, visited);
+        }
+
+        void AppendNodeRows(ElementData element, Dictionary<string, ElementData> byId, int depth, HashSet<string> visited)
+        {
+            if (element == null || !visited.Add(element.Id)) return;
+            _nodeTree.Add(new NodeRow
+            {
+                Depth = depth,
+                Label = string.IsNullOrEmpty(element.FigmaType)
+                    ? element.Name
+                    : $"{element.Name}  ({element.FigmaType})",
+            });
+            if (element.Children == null) return;
+            foreach (var childId in element.Children)
+                if (byId.TryGetValue(childId, out var child))
+                    AppendNodeRows(child, byId, depth + 1, visited);
         }
 
         void LoadSelectedPreview()
@@ -325,6 +372,10 @@ namespace FigmaImporter.Sync
             EditorGUILayout.LabelField(_selected.Name, EditorStyles.boldLabel);
             EditorGUILayout.LabelField(_selected.ManifestPath, EditorStyles.miniLabel);
             EditorGUILayout.LabelField($"Last synced: {_selected.SyncedAtUtc.ToLocalTime():yyyy-MM-dd HH:mm}", EditorStyles.miniLabel);
+
+            EditorGUILayout.BeginHorizontal();
+            DrawNodeTree();
+            EditorGUILayout.BeginVertical();
 
             EditorGUILayout.BeginHorizontal();
             if (_selected.UnityPreviewPath != null)
@@ -354,6 +405,10 @@ namespace FigmaImporter.Sync
             EditorGUILayout.EndHorizontal();
 
             DrawZoomPreview();
+
+            EditorGUILayout.EndVertical();
+            EditorGUILayout.EndHorizontal();
+
             DrawLog();
 
             EditorGUILayout.BeginHorizontal();
@@ -372,6 +427,29 @@ namespace FigmaImporter.Sync
                 }
             }
             EditorGUILayout.EndHorizontal();
+            EditorGUILayout.EndVertical();
+        }
+
+        void DrawNodeTree()
+        {
+            EditorGUILayout.BeginVertical(GUILayout.Width(220));
+            EditorGUILayout.LabelField($"Child Nodes ({_nodeTree.Count})", EditorStyles.boldLabel);
+            _nodeTreeScroll = EditorGUILayout.BeginScrollView(_nodeTreeScroll);
+            if (_nodeTree.Count == 0)
+            {
+                GUILayout.Label("No node data in manifest.", EditorStyles.centeredGreyMiniLabel);
+            }
+            else
+            {
+                foreach (var row in _nodeTree)
+                {
+                    EditorGUILayout.BeginHorizontal();
+                    GUILayout.Space(4 + row.Depth * 12);
+                    GUILayout.Label(row.Label, EditorStyles.label);
+                    EditorGUILayout.EndHorizontal();
+                }
+            }
+            EditorGUILayout.EndScrollView();
             EditorGUILayout.EndVertical();
         }
 

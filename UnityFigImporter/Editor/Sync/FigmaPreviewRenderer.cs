@@ -5,44 +5,108 @@ using UnityEngine;
 namespace FigmaImporter.Sync
 {
     /// <summary>
-    /// Runs a real import (OutputMode.None) and renders the resulting hierarchy
-    /// offscreen to a PNG, so the Sync preview shows exactly what Unity builds.
+    /// Runs a real import (OutputMode.None) with in-memory sprites and renders
+    /// the resulting hierarchy offscreen to a PNG, so the Sync preview shows
+    /// exactly what Unity builds — without writing anything to Assets/.
     /// </summary>
     public static class FigmaPreviewRenderer
     {
         const int MaxSize = 2048;
         const int UILayer = 5;
 
+        // Staging-folder PNGs that are previews, not element assets.
+        static readonly string[] NonAssetPngs = { "preview.png", "unity-preview.png" };
+
         /// <summary>
-        /// Import (textures + hierarchy, no scene canvas, no prefab) then render
-        /// the root to <paramref name="outputPng"/>. The transient root is always
-        /// destroyed before returning. Render failure is best-effort: logged as
-        /// a warning, the import result itself is unchanged.
+        /// Build the hierarchy with sprites loaded in-memory from the staging
+        /// folder (no texture import, no atlas, nothing written to Assets/),
+        /// then render the root to <paramref name="outputPng"/>. The transient
+        /// root and all in-memory textures are always destroyed before
+        /// returning. Render failure is best-effort: logged as a warning, the
+        /// import result itself is unchanged.
         /// </summary>
         public static ImportResult ImportAndRender(ImportRequest request, string outputPng)
         {
             DeleteStalePreview(outputPng);
             request.OutputMode = OutputMode.None;
-            var result = FigmaImportRunner.Run(request);
-            if (result.Root == null) return result;
 
+            var transient = new List<Object>();
+            request.PreloadedSprites = LoadStagingSprites(request.ExportFolder, transient);
+
+            ImportResult result;
             try
             {
-                RenderRootToPng(result.Root, outputPng, result.Log);
-            }
-            catch (System.Exception ex)
-            {
-                result.Log.Add(new BuildLogEntry(
-                    BuildLogEntry.LogLevel.Warning,
-                    "Unity preview render failed: " + ex.Message));
+                result = FigmaImportRunner.Run(request);
+                if (result.Root != null)
+                {
+                    try
+                    {
+                        RenderRootToPng(result.Root, outputPng, result.Log);
+                    }
+                    catch (System.Exception ex)
+                    {
+                        result.Log.Add(new BuildLogEntry(
+                            BuildLogEntry.LogLevel.Warning,
+                            "Unity preview render failed: " + ex.Message));
+                    }
+                    finally
+                    {
+                        if (result.Root != null)
+                            Object.DestroyImmediate(result.Root);
+                        result.Root = null;
+                    }
+                }
             }
             finally
             {
-                if (result.Root != null)
-                    Object.DestroyImmediate(result.Root);
-                result.Root = null;
+                request.PreloadedSprites = null;
+                foreach (var obj in transient)
+                    if (obj != null) Object.DestroyImmediate(obj);
             }
             return result;
+        }
+
+        /// <summary>
+        /// Load every element PNG in the staging folder as a transient
+        /// Texture2D + Sprite. Keys match TextureImportHelper.ImportTextures
+        /// (PNG filename with extension); pixelsPerUnit 100 matches the
+        /// asset-import path so SetNativeSize behaves identically.
+        /// </summary>
+        static Dictionary<string, Sprite> LoadStagingSprites(string folder, List<Object> transient)
+        {
+            var sprites = new Dictionary<string, Sprite>();
+            if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder)) return sprites;
+
+            foreach (var path in Directory.GetFiles(folder, "*.png"))
+            {
+                string fileName = Path.GetFileName(path);
+                if (System.Array.IndexOf(NonAssetPngs, fileName) >= 0) continue;
+
+                var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false)
+                {
+                    hideFlags = HideFlags.HideAndDontSave,
+                    wrapMode = TextureWrapMode.Clamp,
+                    filterMode = FilterMode.Bilinear,
+                };
+                if (!tex.LoadImage(File.ReadAllBytes(path)))
+                {
+                    Object.DestroyImmediate(tex);
+                    continue;
+                }
+                transient.Add(tex);
+
+                var sprite = Sprite.Create(
+                    tex,
+                    new Rect(0, 0, tex.width, tex.height),
+                    new Vector2(0.5f, 0.5f),
+                    100f);
+                sprite.name = Path.GetFileNameWithoutExtension(fileName);
+                sprite.hideFlags = HideFlags.HideAndDontSave;
+                transient.Add(sprite);
+
+                sprites[fileName] = sprite;
+            }
+            return sprites;
         }
 
         static void RenderRootToPng(GameObject root, string outputPng, List<BuildLogEntry> log)

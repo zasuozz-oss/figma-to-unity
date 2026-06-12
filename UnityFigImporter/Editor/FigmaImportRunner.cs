@@ -26,6 +26,13 @@ namespace FigmaImporter
         public CanvasSettings CanvasSettings;        // null → defaults + auto ref resolution from manifest
         public Dictionary<string, TMP_FontAsset> FontMapping; // null → auto-match project fonts
         public System.Action<float, string> OnProgress;       // 0..1 + label
+        /// <summary>
+        /// Pre-built sprites keyed by PNG filename (same keys as
+        /// TextureImportHelper.ImportTextures). When set, Run uses these and
+        /// skips texture import + atlas entirely — nothing is written to Assets/.
+        /// Caller owns their lifetime.
+        /// </summary>
+        public Dictionary<string, Sprite> PreloadedSprites;
     }
 
     public class ImportResult
@@ -67,7 +74,15 @@ namespace FigmaImporter
                 // 1. Import textures
                 Dictionary<string, Sprite> sprites = null;
 
-                if (req.BuildOptions.ImportTextures)
+                if (req.PreloadedSprites != null)
+                {
+                    sprites = req.PreloadedSprites;
+                    result.TextureCount = sprites.Count;
+                    result.Log.Add(new BuildLogEntry(
+                        BuildLogEntry.LogLevel.Success,
+                        $"Using {sprites.Count} in-memory sprites (no assets imported)"));
+                }
+                else if (req.BuildOptions.ImportTextures)
                 {
                     string spriteRoot = string.IsNullOrEmpty(req.SpriteOutputFolder)
                         ? Path.Combine(Application.dataPath, "FigmaImport").Replace('\\', '/')

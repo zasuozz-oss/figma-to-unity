@@ -47,14 +47,16 @@ thật của Unity**, rồi mới Build prefab.
    Port (mặc định `1994`, nút **Check**), spawn standalone bridge, Output Mode,
    Prefab Save Path, Sprite Folder.
 3. Bấm **Use current Figma selection** (hoặc dán URL/node-id) → **Sync**.
-4. Sync = export assets + manifest vào `.unity-figma/<node-id>/` **+ chạy
-   pipeline import thật** (textures vào Sprite Folder, dựng hierarchy offscreen)
-   → render `unity-preview.png`. Detail panel hiện đúng những gì Unity sẽ build —
-   thấy ngay lỗi gộp ảnh / nhầm font / nhầm text để quay lại sửa trên Figma.
-   Toggle **Unity build | Figma** để so với render gốc; log warning/error hiện
-   dưới preview.
-5. Ưng rồi thì bấm **Build** → prefab được tạo (Output Mode trong Settings) và
-   được ping trong Project window. Data staging giữ nguyên.
+4. Sync = export assets + manifest vào `.unity-figma/<node-id>/` **+ dựng
+   hierarchy thật bằng sprite in-memory** (không ghi gì vào `Assets/` — không
+   import texture, không tạo atlas) → render `unity-preview.png` offscreen.
+   Detail panel hiện đúng những gì Unity sẽ build — thấy ngay lỗi gộp ảnh /
+   nhầm font / nhầm text để quay lại sửa trên Figma. Toggle
+   **Unity build | Figma** để so với render gốc; panel **Child Nodes** bên trái
+   preview liệt kê cây node của element; log warning/error hiện dưới preview.
+5. Ưng rồi thì bấm **Build** → lúc này texture mới được import vào Sprite
+   Folder và prefab được tạo (Output Mode trong Settings), prefab được ping
+   trong Project window. Data staging giữ nguyên.
 6. Cột trái: mọi element đã sync (search, tuổi `22m`/`4h`); chọn để xem lại,
    **Build** lại hoặc **Delete** (xoá khỏi `.unity-figma`).
 7. Tùy chọn **Refine with AI** sau khi Build để ghi descriptor và copy prompt bàn giao

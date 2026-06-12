@@ -271,10 +271,14 @@ Sync chạy **pipeline import thật** rồi render kết quả offscreen ra PNG
 
 1. Export assets + manifest + `preview.png` (Figma render, giữ từ v2) vào staging.
 2. Chạy `FigmaImportRunner.Run` với **`OutputMode.None`** (enum value mới, thêm
-   CUỐI enum): textures import thật vào Sprite Folder (chấp nhận side-effect —
-   fidelity 100%, Build sau đó tái dùng sprites), `HierarchyBuilder.Build` dựng
-   hierarchy đầy đủ nhưng **không** tạo Canvas scene mode, **không** save prefab.
-   `None` rơi qua cả 2 nhánh scene/prefab trong `Build` — không sửa logic builder.
+   CUỐI enum): ~~textures import thật vào Sprite Folder (chấp nhận side-effect)~~
+   **[V3.1]** sprites được nạp **in-memory** từ PNG staging
+   (`Texture2D.LoadImage` + `Sprite.Create`, key = tên file PNG, PPU 100 — khớp
+   `TextureImportHelper`) qua field mới `ImportRequest.PreloadedSprites`; Run
+   bỏ qua texture import + atlas → **không ghi gì vào `Assets/`** khi Sync.
+   `HierarchyBuilder.Build` dựng hierarchy đầy đủ nhưng **không** tạo Canvas
+   scene mode, **không** save prefab. `None` rơi qua cả 2 nhánh scene/prefab
+   trong `Build` — không sửa logic builder.
 3. `ImportResult` thêm field `public GameObject Root` (transient, chỉ dùng cho
    preview) — `FigmaImportRunner.Run` gán `result.Root = root`.
 4. **`FigmaPreviewRenderer`** (file mới) render `Root` offscreen:
@@ -326,6 +330,17 @@ Sync chạy **pipeline import thật** rồi render kết quả offscreen ra PNG
   plugin không được đè file Unity ghi).
 - Log của lần Sync gần nhất lưu in-memory trong window (không persist) — entry
   chọn lại sau khi đóng window chỉ còn preview, không còn log. Chấp nhận (YAGNI).
+
+## V3.1 (amendment — theo feedback user sau khi dùng thử v3)
+
+1. **Sync không được đụng vào `Assets/`** — user bác bỏ side-effect "import
+   texture thật khi Sync". Sprites cho preview nạp in-memory (xem mục 2 ở trên,
+   `ImportRequest.PreloadedSprites`); texture chỉ được import thật khi bấm
+   **Build**. Bonus: fix luôn bug **ảnh trắng** — trước đây SpriteAtlas được
+   tạo cùng frame với render, atlas chưa pack nên mọi Image render trắng.
+2. **Panel Child Nodes**: cột bên trái preview (trong detail, dưới sync bar)
+   liệt kê cây node của element từ `manifest.json` (đệ quy `Children`/`ParentId`,
+   indent theo depth, label `Name (FigmaType)`).
 
 ## Error handling bổ sung (v3)
 
