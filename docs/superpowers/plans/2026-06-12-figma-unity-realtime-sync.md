@@ -463,7 +463,6 @@ git commit -m "feat(bridge): buildSelectionInfo combining selection + fileKey"
 ```ts
 import { exportElementToDisk } from "./tools.js";
 import { buildSelectionInfo } from "./api.js";
-import { Role } from "./types.js";
 ```
 
 - [ ] **Step 2: Thêm routing `/api/*`** — trong callback `http.createServer`, ngay trước `res.writeHead(404)`:
@@ -534,12 +533,10 @@ import { Role } from "./types.js";
   }
 ```
 
-> `Role` import có thể chưa dùng — bỏ nếu tsc cảnh báo `noUnusedLocals`. Kiểm tra `tsconfig.json` (Step 4).
-
 - [ ] **Step 4: Build, xác nhận compile**
 
 Run: `cd FigExportForUnity/server && bun run build`
-Expected: tsc thành công. Nếu lỗi "Role declared but never used" → xóa dòng import `Role`.
+Expected: tsc thành công (tsconfig không bật `noUnusedLocals`; build bỏ qua `*.test.ts`).
 
 - [ ] **Step 5: Commit**
 
