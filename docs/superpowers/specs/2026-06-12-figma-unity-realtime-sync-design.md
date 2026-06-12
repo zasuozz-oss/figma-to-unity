@@ -241,3 +241,107 @@ Toolbar 2 tab: **Sync** | **Library**.
   folder có manifest giả, skip folder hỏng, `FormatAge` các mốc m/h/d.
 - **Manual:** Sync → kiểm `.unity-figma/<id>/preview.png` hiện trong window → Build →
   prefab xuất hiện → Library tab list/search/zoom/Delete.
+
+---
+
+# V3: Dashboard duy nhất + preview là kết quả import Unity thật
+
+**Ngày:** 2026-06-12 (sau khi v2/Phase 3 được verify và commit)
+**Trạng thái:** Đã chốt design với user → writing-plans (Phase 4)
+
+## Yêu cầu từ user
+
+1. **Bỏ 2 menu item** `Window/Figma/Import` và `Window/Figma/Sync` — chỉ còn duy nhất
+   **`Window/Figma/Dashboard`**. Quyết định qua AskUserQuestion: xoá `[MenuItem]` trên
+   `FigmaImporterWindow.ShowWindow` nhưng **giữ nguyên class** (window cũ vẫn mở được
+   bằng code nếu cần).
+2. **Gộp tab Sync + Library thành MỘT view duy nhất** (bỏ toolbar 2 tab).
+3. **Đưa phần cấu hình vào Settings** (foldout): Port/Check, spawn bridge,
+   Output Mode, Prefab Save Path, Sprite Folder.
+4. **"Use current Figma selection" + ô URL để NGOÀI** (top bar, cạnh nút Sync).
+   Quyết định qua AskUserQuestion: URL field nằm ngoài, cạnh nút selection.
+5. **Khi ấn Sync phải hiển thị KẾT QUẢ CUỐI như khi thực sự import vào Unity** —
+   không phải screenshot Figma. Lý do (nguyên văn ý user): để thấy ngay các lỗi
+   chất lượng — gộp nhiều ảnh thành 1 ảnh, nhầm font, nhầm text, gộp nhiều mảnh
+   nhỏ thành 1 mảnh to — và quay lại sửa trên Figma trước khi Build.
+
+## Cơ chế "Unity render preview"
+
+Sync chạy **pipeline import thật** rồi render kết quả offscreen ra PNG:
+
+1. Export assets + manifest + `preview.png` (Figma render, giữ từ v2) vào staging.
+2. Chạy `FigmaImportRunner.Run` với **`OutputMode.None`** (enum value mới, thêm
+   CUỐI enum): textures import thật vào Sprite Folder (chấp nhận side-effect —
+   fidelity 100%, Build sau đó tái dùng sprites), `HierarchyBuilder.Build` dựng
+   hierarchy đầy đủ nhưng **không** tạo Canvas scene mode, **không** save prefab.
+   `None` rơi qua cả 2 nhánh scene/prefab trong `Build` — không sửa logic builder.
+3. `ImportResult` thêm field `public GameObject Root` (transient, chỉ dùng cho
+   preview) — `FigmaImportRunner.Run` gán `result.Root = root`.
+4. **`FigmaPreviewRenderer`** (file mới) render `Root` offscreen:
+   camera tạm (orthographic, cullingMask = UI layer, clear màu nền editor tối) +
+   Canvas tạm `ScreenSpaceCamera` (không CanvasScaler → 1 canvas unit = 1 pixel) +
+   `RenderTexture` kích thước = `rect` của root (clamp 8–2048 px) →
+   `Canvas.ForceUpdateCanvases()` → `cam.Render()` → `ReadPixels` → `EncodeToPNG`
+   → ghi **`unity-preview.png`** vào folder staging → `DestroyImmediate` toàn bộ
+   object tạm (root + canvas + camera) trong `finally`.
+5. Lý do KHÔNG dùng Scene mode cho preview: `BuildSceneMode` gọi
+   `RemoveExistingImport` — destroy canvas trùng tên trong scene của user. Nguy hiểm.
+
+## UI Dashboard (1 view duy nhất)
+
+```
+[Use current Figma selection] [Figma URL / node-id............] [Sync]
+▸ Settings  (foldout, mặc định đóng)
+    Port [1994] [Check]   (+ help spawn bridge khi offline)
+    Output Mode / Prefab Save Path / Sprite Folder
+┌──────────────┬──────────────────────────────────────────────┐
+│ [Refresh]    │  <Tên element>  (bold)                       │
+│ [search...]  │  manifest path · Last synced ...             │
+│ Entry A  22m │  Preview: (•) Unity build  ( ) Figma         │
+│ Entry B   4h │  Zoom [slider] [Fit] [1:1]                   │
+│ ...          │  ┌────────────────────────────┐              │
+│              │  │  unity-preview.png (zoom)  │              │
+│              │  └────────────────────────────┘              │
+│              │  ⚠ log warnings/errors của lần import        │
+│              │  [Build]  [Delete]                           │
+└──────────────┴──────────────────────────────────────────────┘
+[status bar / Refine with AI]
+```
+
+- **Sync** = export + import-preview: sau khi xong, entry mới được **auto-select**,
+  detail hiển thị `unity-preview.png` (mặc định toggle = Unity build) + log
+  warnings/errors từ `ImportResult.Log` để QA.
+- **Toggle Unity build / Figma**: so sánh nhanh kết quả Unity với render gốc Figma
+  (`preview.png`). Entry cũ chưa có `unity-preview.png` → toggle Figma + hint.
+- **Build**: như v2 (Output Mode từ Settings), thêm
+  `EditorGUIUtility.PingObject` prefab vừa tạo để user thấy ngay trong Project.
+- Connection/spawn-bridge chuyển hết vào Settings foldout; nút Check vẫn cập nhật
+  status bar.
+
+## Thay đổi model + server
+
+- `SyncLibrary.Entry` thêm `UnityPreviewPath` (null nếu chưa có file);
+  thêm `LoadTexture(string path)` tổng quát (LoadPreview giữ nguyên, delegate).
+- Server `isSafeAssetFileName` blacklist thêm **`unity-preview.png`** (asset từ
+  plugin không được đè file Unity ghi).
+- Log của lần Sync gần nhất lưu in-memory trong window (không persist) — entry
+  chọn lại sau khi đóng window chỉ còn preview, không còn log. Chấp nhận (YAGNI).
+
+## Error handling bổ sung (v3)
+
+| Tình huống | Hành vi |
+|-----------|---------|
+| Import-preview fail (manifest hỏng, exception) | Status lỗi + log hiển thị; entry vẫn staged với Figma preview |
+| Render offscreen fail | Best-effort: log warning, entry không có `unity-preview.png`, toggle fallback Figma |
+| Entry cũ (synced trước v3) | Không có `unity-preview.png` → toggle disable Unity option, hiện Figma |
+| Root quá to (> 2048px) | Clamp kích thước RT, render co lại theo chiều lớn nhất |
+
+## Testing (Phase 4)
+
+- **Bridge:** test `isSafeAssetFileName` từ chối asset tên `unity-preview.png`.
+- **Unity EditMode:** `SyncLibraryTests` thêm case `UnityPreviewPath` được populate
+  khi file tồn tại; test `OutputMode.None` qua `FigmaImportRunner` không khả thi
+  EditMode thuần (cần manifest + texture) → verify qua e2e.
+- **Manual e2e:** Sync element thật → `.unity-figma/<id>/unity-preview.png` tồn tại,
+  detail hiện Unity render + log; toggle Figma OK; Build → prefab ping; menu chỉ
+  còn `Window/Figma/Dashboard`.

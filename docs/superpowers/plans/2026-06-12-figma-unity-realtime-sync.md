@@ -2304,3 +2304,960 @@ git commit -m "docs(unity): document v2 Sync/Build split + .unity-figma staging 
 **Type consistency:** `ExportResult.previewFile` (Task 17) khớp `ExportElementResult.previewFile` (Task 15). `TryExportElement(nodeId, outputDir)` (Task 17) khớp call-site Task 17 Step 2 và Task 18 `DoSync`. `SyncLibrary.Entry` fields (Task 16) khớp mọi usage trong Task 18 (`Folder/Name/NodeId/ManifestPath/PreviewPath/NodeCount/SyncedAtUtc`). `SyncLibrary.List(string)` overload tồn tại cho test (Task 16).
 
 **Placeholder scan:** không có TBD/“xử lý lỗi phù hợp”; mọi step có code/lệnh cụ thể.
+
+---
+
+# PHASE 4 — V3: Dashboard duy nhất + Unity render preview (Tasks 20-25)
+
+> Spec: phần "V3" trong `docs/superpowers/specs/2026-06-12-figma-unity-realtime-sync-design.md`.
+> Unity test project: `/Users/zasuo/Unity/Unity-AI` (manifest đã có `testables`).
+> Lệnh Unity: `utk --project /Users/zasuo/Unity/Unity-AI editor refresh --compile`,
+> `utk --project /Users/zasuo/Unity/Unity-AI test --filter FigmaImporter.Tests`,
+> `utk --project /Users/zasuo/Unity/Unity-AI console --type error`.
+> Lưu ý utk: call đầu sau compile có thể fail "connection closed before response"
+> (domain reload) — đợi ~20s rồi retry, tối đa 3 lần.
+
+**Impact đã kiểm (codegraph/grep):**
+- `OutputMode` dùng ở: FigmaImportRunner.cs:125, FigmaImporterWindow.cs:474+894,
+  FigmaSyncWindow.cs, FigmaHeadlessImporter.cs:25-42 (`Enum.Parse` — thêm value
+  CUỐI enum không đổi giá trị Scene/Prefab/Both → an toàn), HierarchyBuilder.cs:51+85.
+- `ImportResult` chỉ được tạo/đọc trong FigmaImportRunner.cs + 2 window + headless
+  (chỉ đọc `Success/RootName/Log` → thêm field `Root` an toàn).
+- `FigmaImporterWindow.ShowWindow` không có caller nào ngoài chính `[MenuItem]` —
+  xoá attribute an toàn, class giữ nguyên.
+- Side-effect chấp nhận (đã chốt trong spec): `OutputMode.None` xuất hiện trong
+  EnumPopup "Output Mode" của cả 2 window; chọn None khi Build = chỉ import
+  textures, không scene/prefab. Không chặn.
+
+### Task 20: Server — blacklist `unity-preview.png`
+
+**Files:**
+- Modify: `FigExportForUnity/server/src/tools.ts` (hàm `isSafeAssetFileName`, ~dòng 576)
+- Test: `FigExportForUnity/server/src/tools.test.ts`
+
+- [ ] **Step 1: Viết test fail** — thêm vào cuối `describe("exportElementToDisk includePreview")` trong `tools.test.ts`:
+
+```ts
+  test("rejects plugin asset named unity-preview.png", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "figexp-"));
+    const evil = {
+      manifest: samplePayload.manifest,
+      assets: [{ name: "unity-preview.png", data: [1, 2, 3] }],
+    };
+    await expect(
+      exportElementToDisk(fakeSender(evil), {
+        nodeId: "4029:12345",
+        outputDir: dir,
+      })
+    ).rejects.toThrow(/Unsafe/);
+  });
+```
+
+- [ ] **Step 2: Chạy test, verify FAIL**
+
+Run: `cd FigExportForUnity/server && bun test src`
+Expected: test mới FAIL (asset được ghi thay vì throw).
+
+- [ ] **Step 3: Sửa `isSafeAssetFileName`** trong `tools.ts` — thêm 1 dòng blacklist:
+
+```ts
+function isSafeAssetFileName(name: string): boolean {
+  const lowerName = name.toLowerCase();
+  return (
+    name.length > 0 &&
+    name !== "." &&
+    name !== ".." &&
+    lowerName !== "manifest.json" &&
+    lowerName !== "preview.png" &&
+    lowerName !== "unity-preview.png" &&
+    lowerName.endsWith(".png") &&
+    !name.includes("\0") &&
+    !path.isAbsolute(name) &&
+    !name.includes("/") &&
+    !name.includes("\\")
+  );
+}
+```
+
+- [ ] **Step 4: Chạy test + build, verify PASS**
+
+Run: `cd FigExportForUnity/server && bun test src && bun run build`
+Expected: 24 tests PASS, tsc OK.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add FigExportForUnity/server/src/tools.ts FigExportForUnity/server/src/tools.test.ts
+git commit -m "feat(server): blacklist unity-preview.png asset filename"
+```
+
+---
+
+### Task 21: Unity — `OutputMode.None` + `ImportResult.Root`
+
+**Files:**
+- Modify: `UnityFigImporter/Editor/HierarchyBuilder.cs` (enum `OutputMode`, dòng 51-56)
+- Modify: `UnityFigImporter/Editor/FigmaImportRunner.cs` (class `ImportResult` dòng 31-37, `Run` dòng 135)
+
+- [ ] **Step 1: Thêm `None` vào CUỐI enum** trong `HierarchyBuilder.cs` (giữ nguyên giá trị 3 value cũ — FigmaHeadlessImporter dùng `Enum.Parse` theo tên nên không vỡ):
+
+```csharp
+    public enum OutputMode
+    {
+        Scene,
+        Prefab,
+        Both,
+        /// <summary>Build hierarchy only — no scene canvas, no prefab. Used for Sync preview.</summary>
+        None
+    }
+```
+
+Không sửa gì khác trong `Build` — `None` tự rơi qua cả 2 nhánh
+`if (outputMode == OutputMode.Scene || outputMode == OutputMode.Both)` và
+`if (outputMode == OutputMode.Prefab || outputMode == OutputMode.Both)`.
+
+- [ ] **Step 2: Thêm field `Root` vào `ImportResult`** trong `FigmaImportRunner.cs`:
+
+```csharp
+    public class ImportResult
+    {
+        public bool Success;
+        public string RootName;
+        public int TextureCount;
+        public List<BuildLogEntry> Log = new List<BuildLogEntry>();
+        /// <summary>Transient scene object — only set for the caller to render/destroy. Not an asset.</summary>
+        public GameObject Root;
+    }
+```
+
+- [ ] **Step 3: Gán `result.Root`** trong `Run` — sửa đoạn sau `HierarchyBuilder.Build(...)` (dòng ~135):
+
+```csharp
+                result.Root = root;
+                result.RootName = root != null ? root.name : null;
+                result.Success = root != null
+                    && !result.Log.Exists(e => e.Level == BuildLogEntry.LogLevel.Error);
+```
+
+- [ ] **Step 4: Compile + test Unity**
+
+Run: `utk --project /Users/zasuo/Unity/Unity-AI editor refresh --compile`
+Run: `utk --project /Users/zasuo/Unity/Unity-AI test --filter FigmaImporter.Tests`
+Expected: 0 errors, 10 tests PASS (chưa có test mới).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add UnityFigImporter/Editor/HierarchyBuilder.cs UnityFigImporter/Editor/FigmaImportRunner.cs
+git commit -m "feat(unity): OutputMode.None + ImportResult.Root for offscreen preview"
+```
+
+---
+
+### Task 22: Unity — `SyncLibrary.UnityPreviewPath` + `LoadTexture`
+
+**Files:**
+- Modify: `UnityFigImporter/Editor/Sync/SyncLibrary.cs`
+- Test: `UnityFigImporter/Editor/Tests/SyncLibraryTests.cs`
+
+- [ ] **Step 1: Viết test fail** — thêm vào `SyncLibraryTests.cs`:
+
+```csharp
+        [Test]
+        public void List_PopulatesUnityPreviewPath()
+        {
+            WriteManifest("7-8", "{\"screen\":{\"name\":\"Hud\"},\"elements\":[]}");
+            File.WriteAllBytes(Path.Combine(_root, "7-8", "unity-preview.png"), new byte[] { 1 });
+            var entries = SyncLibrary.List(_root);
+            Assert.AreEqual(1, entries.Count);
+            StringAssert.EndsWith("unity-preview.png", entries[0].UnityPreviewPath);
+            Assert.IsNull(entries[0].PreviewPath);
+        }
+```
+
+- [ ] **Step 2: Compile — verify FAIL** (compile error `UnityPreviewPath` chưa tồn tại)
+
+Run: `utk --project /Users/zasuo/Unity/Unity-AI editor refresh --compile`
+Expected: compile error về `UnityPreviewPath`.
+
+- [ ] **Step 3: Sửa `SyncLibrary.cs`** — 3 thay đổi:
+
+(a) Thêm field vào `Entry`:
+
+```csharp
+        public class Entry
+        {
+            public string Folder;
+            public string Name;
+            public string NodeId;
+            public string ManifestPath;
+            public string PreviewPath;
+            public string UnityPreviewPath;
+            public int NodeCount;
+            public DateTime SyncedAtUtc;
+        }
+```
+
+(b) Trong `Load(folder)`, populate field mới (thêm 2 dòng):
+
+```csharp
+                var previewPath = Path.Combine(folder, "preview.png");
+                var unityPreviewPath = Path.Combine(folder, "unity-preview.png");
+                return new Entry
+                {
+                    Folder = folder,
+                    Name = (string)manifest.SelectToken("screen.name") ?? Path.GetFileName(folder),
+                    NodeId = Path.GetFileName(folder).Replace('-', ':'),
+                    ManifestPath = manifestPath,
+                    PreviewPath = File.Exists(previewPath) ? previewPath : null,
+                    UnityPreviewPath = File.Exists(unityPreviewPath) ? unityPreviewPath : null,
+                    NodeCount = elements != null ? elements.Count : 0,
+                    SyncedAtUtc = File.GetLastWriteTimeUtc(manifestPath),
+                };
+```
+
+(c) Tổng quát hoá loader — thay `LoadPreview` bằng:
+
+```csharp
+        public static Texture2D LoadTexture(string path)
+        {
+            if (path == null || !File.Exists(path)) return null;
+            var tex = new Texture2D(2, 2);
+            if (tex.LoadImage(File.ReadAllBytes(path)))
+                return tex;
+            UnityEngine.Object.DestroyImmediate(tex);
+            return null;
+        }
+
+        public static Texture2D LoadPreview(Entry entry) =>
+            entry == null ? null : LoadTexture(entry.PreviewPath);
+```
+
+- [ ] **Step 4: Compile + test, verify PASS**
+
+Run: `utk --project /Users/zasuo/Unity/Unity-AI editor refresh --compile`
+Run: `utk --project /Users/zasuo/Unity/Unity-AI test --filter FigmaImporter.Tests`
+Expected: 0 errors, 11 tests PASS (10 cũ + `List_PopulatesUnityPreviewPath`).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add UnityFigImporter/Editor/Sync/SyncLibrary.cs UnityFigImporter/Editor/Tests/SyncLibraryTests.cs
+git commit -m "feat(unity): SyncLibrary tracks unity-preview.png + generic LoadTexture"
+```
+
+---
+
+### Task 23: Unity — `FigmaPreviewRenderer` (offscreen render → unity-preview.png)
+
+**Files:**
+- Create: `UnityFigImporter/Editor/Sync/FigmaPreviewRenderer.cs`
+- Create: `UnityFigImporter/Editor/Sync/FigmaPreviewRenderer.cs.meta`
+
+Không có EditMode test thuần cho task này (cần manifest + textures thật) —
+verify qua e2e ở Task 25.
+
+- [ ] **Step 1: Tạo `FigmaPreviewRenderer.cs`** với nội dung đầy đủ:
+
+```csharp
+using System.Collections.Generic;
+using System.IO;
+using UnityEngine;
+
+namespace FigmaImporter.Sync
+{
+    /// <summary>
+    /// Runs a real import (OutputMode.None) and renders the resulting hierarchy
+    /// offscreen to a PNG, so the Sync preview shows exactly what Unity builds.
+    /// </summary>
+    public static class FigmaPreviewRenderer
+    {
+        const int MaxSize = 2048;
+        const int UILayer = 5;
+
+        /// <summary>
+        /// Import (textures + hierarchy, no scene canvas, no prefab) then render
+        /// the root to <paramref name="outputPng"/>. The transient root is always
+        /// destroyed before returning. Render failure is best-effort: logged as
+        /// a warning, the import result itself is unchanged.
+        /// </summary>
+        public static ImportResult ImportAndRender(ImportRequest request, string outputPng)
+        {
+            request.OutputMode = OutputMode.None;
+            var result = FigmaImportRunner.Run(request);
+            if (result.Root == null) return result;
+
+            try
+            {
+                RenderRootToPng(result.Root, outputPng, result.Log);
+            }
+            catch (System.Exception ex)
+            {
+                result.Log.Add(new BuildLogEntry(
+                    BuildLogEntry.LogLevel.Warning,
+                    "Unity preview render failed: " + ex.Message));
+            }
+            finally
+            {
+                if (result.Root != null)
+                    Object.DestroyImmediate(result.Root);
+                result.Root = null;
+            }
+            return result;
+        }
+
+        static void RenderRootToPng(GameObject root, string outputPng, List<BuildLogEntry> log)
+        {
+            var rootRect = root.GetComponent<RectTransform>();
+            float srcW = rootRect != null ? rootRect.rect.width : 256f;
+            float srcH = rootRect != null ? rootRect.rect.height : 256f;
+            if (srcW < 1f) srcW = 256f;
+            if (srcH < 1f) srcH = 256f;
+            float fit = Mathf.Min(1f, MaxSize / Mathf.Max(srcW, srcH));
+            int w = Mathf.Max(8, Mathf.RoundToInt(srcW * fit));
+            int h = Mathf.Max(8, Mathf.RoundToInt(srcH * fit));
+
+            GameObject camGO = null, canvasGO = null;
+            RenderTexture rt = null;
+            Texture2D tex = null;
+            try
+            {
+                camGO = new GameObject("~FigmaPreviewCamera") { hideFlags = HideFlags.HideAndDontSave };
+                var cam = camGO.AddComponent<Camera>();
+                cam.clearFlags = CameraClearFlags.SolidColor;
+                cam.backgroundColor = new Color(0.16f, 0.16f, 0.16f, 1f);
+                cam.cullingMask = 1 << UILayer;
+                cam.orthographic = true;
+                cam.nearClipPlane = 0.1f;
+                cam.farClipPlane = 200f;
+
+                canvasGO = new GameObject("~FigmaPreviewCanvas") { hideFlags = HideFlags.HideAndDontSave };
+                canvasGO.layer = UILayer;
+                var canvas = canvasGO.AddComponent<Canvas>();
+                canvas.renderMode = RenderMode.ScreenSpaceCamera;
+                canvas.worldCamera = cam;
+                canvas.planeDistance = 100f;
+                // No CanvasScaler: 1 canvas unit == 1 RenderTexture pixel.
+
+                root.transform.SetParent(canvasGO.transform, false);
+                SetLayerRecursive(root.transform, UILayer);
+                if (rootRect != null)
+                {
+                    rootRect.anchorMin = rootRect.anchorMax = new Vector2(0.5f, 0.5f);
+                    rootRect.pivot = new Vector2(0.5f, 0.5f);
+                    rootRect.anchoredPosition = Vector2.zero;
+                    root.transform.localScale = Vector3.one * fit;
+                }
+
+                rt = RenderTexture.GetTemporary(w, h, 24, RenderTextureFormat.ARGB32);
+                cam.targetTexture = rt;
+
+                Canvas.ForceUpdateCanvases();
+                cam.Render();
+
+                var prevActive = RenderTexture.active;
+                RenderTexture.active = rt;
+                tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
+                tex.ReadPixels(new Rect(0, 0, w, h), 0, 0);
+                tex.Apply();
+                RenderTexture.active = prevActive;
+
+                File.WriteAllBytes(outputPng, tex.EncodeToPNG());
+                log.Add(new BuildLogEntry(
+                    BuildLogEntry.LogLevel.Success,
+                    $"Unity preview rendered {w}x{h} -> {Path.GetFileName(outputPng)}"));
+            }
+            finally
+            {
+                if (tex != null) Object.DestroyImmediate(tex);
+                if (rt != null)
+                {
+                    RenderTexture.active = null;
+                    RenderTexture.ReleaseTemporary(rt);
+                }
+                // Destroying the canvas also destroys the reparented root.
+                if (canvasGO != null) Object.DestroyImmediate(canvasGO);
+                if (camGO != null) Object.DestroyImmediate(camGO);
+            }
+        }
+
+        static void SetLayerRecursive(Transform t, int layer)
+        {
+            t.gameObject.layer = layer;
+            for (int i = 0; i < t.childCount; i++)
+                SetLayerRecursive(t.GetChild(i), layer);
+        }
+    }
+}
+```
+
+- [ ] **Step 2: Tạo `FigmaPreviewRenderer.cs.meta`** (GUID 32 hex lowercase, theo format meta tối giản hiện có):
+
+```yaml
+fileFormatVersion: 2
+guid: b2c3d4e5f6a708192b3c4d5e6f7a8091
+```
+
+- [ ] **Step 3: Compile + test**
+
+Run: `utk --project /Users/zasuo/Unity/Unity-AI editor refresh --compile`
+Run: `utk --project /Users/zasuo/Unity/Unity-AI test --filter FigmaImporter.Tests`
+Expected: 0 errors, 11 tests PASS.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add UnityFigImporter/Editor/Sync/FigmaPreviewRenderer.cs UnityFigImporter/Editor/Sync/FigmaPreviewRenderer.cs.meta
+git commit -m "feat(unity): FigmaPreviewRenderer — offscreen render import result to unity-preview.png"
+```
+
+---
+
+### Task 24: Unity — Dashboard window (gộp 1 view) + bỏ menu Import
+
+**Files:**
+- Modify: `UnityFigImporter/Editor/FigmaImporterWindow.cs` (chỉ xoá attribute dòng 90)
+- Modify: `UnityFigImporter/Editor/Sync/FigmaSyncWindow.cs` (rework toàn bộ)
+
+- [ ] **Step 1: Xoá `[MenuItem("Window/Figma/Import")]`** trong `FigmaImporterWindow.cs` — xoá ĐÚNG 1 dòng attribute (dòng 90), GIỮ nguyên method `ShowWindow()` và toàn bộ class:
+
+```csharp
+        // Menu item removed in v3 — the Dashboard (FigmaSyncWindow) is the single
+        // entry point. Open this window via FigmaImporterWindow.ShowWindow() if needed.
+        public static void ShowWindow()
+        {
+            var window = GetWindow<FigmaImporterWindow>("Figma → Unity");
+            window.minSize = new Vector2(380, 600);
+        }
+```
+
+- [ ] **Step 2: Thay toàn bộ nội dung `FigmaSyncWindow.cs`** bằng:
+
+```csharp
+using System.Collections.Generic;
+using System.IO;
+using FigmaImporter;
+using UnityEditor;
+using UnityEngine;
+
+namespace FigmaImporter.Sync
+{
+    public class FigmaSyncWindow : EditorWindow
+    {
+        const string PREF_PORT = "FigmaSync_Port";
+        const string PREF_SPRITE_FOLDER = "FigmaImporter_SpriteFolder";
+
+        static readonly string[] PreviewSources = { "Unity build", "Figma" };
+
+        int _port = 1994;
+        string _figmaUrl = "";
+        string _selectionName = "";
+        bool _showSettings;
+        OutputMode _outputMode = OutputMode.Both;
+        string _prefabSavePath = "Assets/Prefabs/UI/";
+        string _spriteOutputFolder = "";
+
+        FigmaBridgeClient.HealthInfo _health;
+        string _status = "";
+        bool _statusIsError;
+
+        string _syncedFolder;          // folder of the most recent Sync (for canonicalUrl)
+        string _syncedUrl;
+        List<BuildLogEntry> _lastLog;  // log of the most recent Sync/Build (in-memory only)
+        ImportDescriptor.Data _lastImport;
+
+        List<SyncLibrary.Entry> _entries = new List<SyncLibrary.Entry>();
+        string _search = "";
+        SyncLibrary.Entry _selected;
+        Texture2D _selectedPreview;
+        int _previewSource;            // 0 = Unity build, 1 = Figma
+        float _zoom = 1f;
+        bool _fitZoom = true;
+        Vector2 _listScroll, _previewScroll;
+
+        [MenuItem("Window/Figma/Dashboard")]
+        public static void Open()
+        {
+            GetWindow<FigmaSyncWindow>("Figma Dashboard");
+        }
+
+        void OnEnable()
+        {
+            _port = EditorPrefs.GetInt(PREF_PORT, 1994);
+            _spriteOutputFolder = EditorPrefs.GetString(
+                PREF_SPRITE_FOLDER,
+                Path.Combine(Application.dataPath, "FigmaImport").Replace('\\', '/'));
+            if (string.IsNullOrEmpty(_spriteOutputFolder))
+                _spriteOutputFolder = Path.Combine(Application.dataPath, "FigmaImport").Replace('\\', '/');
+            RefreshLibrary();
+        }
+
+        FigmaBridgeClient Client => new FigmaBridgeClient(_port);
+
+        void OnGUI()
+        {
+            DrawTopBar();
+            DrawSettings();
+            EditorGUILayout.Space(4);
+            EditorGUILayout.BeginHorizontal();
+            DrawLibraryList();
+            DrawDetail();
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.Space(4);
+            DrawStatus();
+        }
+
+        void DrawTopBar()
+        {
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button("Use current Figma selection", GUILayout.Width(190)))
+            {
+                if (Client.TryGetSelection(out var sel, out var err))
+                {
+                    _figmaUrl = !string.IsNullOrEmpty(sel.url) ? sel.url : sel.nodeId;
+                    _selectionName = sel.name;
+                    SetStatus($"Selected: {sel.name} ({sel.nodeId})", false);
+                }
+                else SetStatus(err, true);
+            }
+            _figmaUrl = EditorGUILayout.TextField(_figmaUrl);
+            using (new EditorGUI.DisabledScope(string.IsNullOrWhiteSpace(_figmaUrl)))
+            {
+                if (GUILayout.Button("Sync", GUILayout.Width(60)))
+                    DoSync();
+            }
+            EditorGUILayout.EndHorizontal();
+            if (!string.IsNullOrEmpty(_selectionName))
+                EditorGUILayout.LabelField("Selection", _selectionName);
+        }
+
+        void DrawSettings()
+        {
+            _showSettings = EditorGUILayout.Foldout(_showSettings, "Settings", true);
+            if (!_showSettings) return;
+            using (new EditorGUI.IndentLevelScope())
+            {
+                DrawConnection();
+                DrawOptions();
+            }
+        }
+
+        void DrawConnection()
+        {
+            EditorGUILayout.BeginHorizontal();
+            int newPort = EditorGUILayout.IntField("Port", _port);
+            if (newPort != _port) { _port = newPort; EditorPrefs.SetInt(PREF_PORT, _port); }
+            if (GUILayout.Button("Check", GUILayout.Width(60)))
+            {
+                if (Client.TryHealth(out _health, out var err))
+                    SetStatus($"Bridge OK (plugin {(_health.pluginConnected ? "connected" : "NOT connected")})", !_health.pluginConnected);
+                else { _health = null; SetStatus(err, true); }
+            }
+            EditorGUILayout.EndHorizontal();
+
+            if (_health == null)
+            {
+                EditorGUILayout.HelpBox("Bridge offline. Open Figma Desktop + plugin, or spawn standalone.", MessageType.Warning);
+                BridgeLauncher.BridgeDir = EditorGUILayout.TextField("Bridge dir", BridgeLauncher.BridgeDir);
+                BridgeLauncher.NodePath = EditorGUILayout.TextField("node path", BridgeLauncher.NodePath);
+                if (GUILayout.Button("Spawn standalone bridge"))
+                {
+                    if (BridgeLauncher.TrySpawn(_port, out var err)) SetStatus("Spawned bridge - press Check in ~2s.", false);
+                    else SetStatus(err, true);
+                }
+            }
+        }
+
+        void DrawOptions()
+        {
+            _outputMode = (OutputMode)EditorGUILayout.EnumPopup("Output Mode", _outputMode);
+            if (_outputMode == OutputMode.Prefab || _outputMode == OutputMode.Both)
+                _prefabSavePath = EditorGUILayout.TextField("Prefab Save Path", _prefabSavePath);
+            var newSpriteFolder = EditorGUILayout.TextField("Sprite Folder", _spriteOutputFolder);
+            if (newSpriteFolder != _spriteOutputFolder)
+            {
+                _spriteOutputFolder = newSpriteFolder;
+                EditorPrefs.SetString(PREF_SPRITE_FOLDER, _spriteOutputFolder);
+            }
+        }
+
+        void DoSync()
+        {
+            var nodeId = FigmaSyncUrl.ExtractNodeId(_figmaUrl);
+            if (nodeId == null)
+            {
+                SetStatus("Invalid Figma URL or node-id.", true);
+                return;
+            }
+
+            try
+            {
+                EditorUtility.DisplayProgressBar("Figma Sync", "Exporting from Figma...", 0.3f);
+                var outputDir = SyncLibrary.FolderFor(nodeId);
+                if (!Client.TryExportElement(nodeId, outputDir, out var export, out var err))
+                {
+                    SetStatus(err, true);
+                    return;
+                }
+
+                EditorUtility.DisplayProgressBar("Figma Sync", "Importing into Unity (preview)...", 0.6f);
+                var request = new ImportRequest
+                {
+                    ExportFolder = export.outputDir,
+                    SpriteOutputFolder = _spriteOutputFolder,
+                };
+                var preview = FigmaPreviewRenderer.ImportAndRender(
+                    request, Path.Combine(export.outputDir, "unity-preview.png"));
+                _lastLog = preview.Log;
+                _lastImport = null;
+                _syncedFolder = export.outputDir;
+                _syncedUrl = _figmaUrl;
+
+                RefreshLibrary();
+                Select(_entries.Find(e => e.Folder == export.outputDir)
+                       ?? SyncLibrary.Load(export.outputDir));
+
+                if (preview.Success)
+                    SetStatus($"Synced {export.name} ({export.nodeCount} nodes) — Unity preview ready.", false);
+                else
+                    SetStatus($"Synced {export.name} but Unity import failed — see log below.", true);
+            }
+            finally
+            {
+                EditorUtility.ClearProgressBar();
+            }
+        }
+
+        void DoBuild(SyncLibrary.Entry entry)
+        {
+            if (entry == null) return;
+            EditorUtility.DisplayProgressBar("Figma Sync", "Building...", 0.5f);
+            try
+            {
+                var request = new ImportRequest
+                {
+                    ExportFolder = entry.Folder,
+                    OutputMode = _outputMode,
+                    PrefabSavePath = _prefabSavePath,
+                    SpriteOutputFolder = _spriteOutputFolder,
+                };
+                var result = FigmaImportRunner.Run(request);
+                _lastLog = result.Log;
+                if (!result.Success)
+                {
+                    SetStatus("Build failed: " + string.Join(" | ", result.Log.ConvertAll(e => e.Message)), true);
+                    return;
+                }
+
+                var prefabPath = Path.Combine(_prefabSavePath, result.RootName + ".prefab").Replace('\\', '/');
+                if (_outputMode == OutputMode.Prefab || _outputMode == OutputMode.Both)
+                {
+                    var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+                    if (prefab != null) EditorGUIUtility.PingObject(prefab);
+                }
+                _lastImport = new ImportDescriptor.Data
+                {
+                    name = entry.Name,
+                    nodeId = entry.NodeId,
+                    canonicalUrl = entry.Folder == _syncedFolder && !string.IsNullOrEmpty(_syncedUrl)
+                        ? _syncedUrl : entry.NodeId,
+                    outputDir = entry.Folder,
+                    prefabPath = prefabPath,
+                };
+                SetStatus($"Built {result.RootName} ({entry.NodeCount} nodes) -> {prefabPath}", false);
+            }
+            finally
+            {
+                EditorUtility.ClearProgressBar();
+            }
+        }
+
+        void RefreshLibrary()
+        {
+            _entries = SyncLibrary.List();
+            if (_selected != null)
+            {
+                _selected = _entries.Find(e => e.Folder == _selected.Folder);
+                if (_selected == null) _selectedPreview = null;
+                else LoadSelectedPreview();
+            }
+        }
+
+        void DrawLibraryList()
+        {
+            EditorGUILayout.BeginVertical(GUILayout.Width(200));
+            if (GUILayout.Button("Refresh")) RefreshLibrary();
+            _search = EditorGUILayout.TextField(_search, EditorStyles.toolbarSearchField);
+            _listScroll = EditorGUILayout.BeginScrollView(_listScroll);
+            foreach (var entry in _entries)
+            {
+                if (!string.IsNullOrEmpty(_search) &&
+                    entry.Name.IndexOf(_search, System.StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+                EditorGUILayout.BeginHorizontal();
+                var style = entry == _selected ? EditorStyles.boldLabel : EditorStyles.label;
+                if (GUILayout.Button(entry.Name, style)) Select(entry);
+                GUILayout.Label(SyncLibrary.FormatAge(entry.SyncedAtUtc), EditorStyles.miniLabel, GUILayout.Width(36));
+                EditorGUILayout.EndHorizontal();
+            }
+            EditorGUILayout.EndScrollView();
+            EditorGUILayout.EndVertical();
+        }
+
+        void Select(SyncLibrary.Entry entry)
+        {
+            _selected = entry;
+            _previewSource = entry != null && entry.UnityPreviewPath != null ? 0 : 1;
+            LoadSelectedPreview();
+            _fitZoom = true;
+            Repaint();
+        }
+
+        void LoadSelectedPreview()
+        {
+            _selectedPreview = null;
+            if (_selected == null) return;
+            var path = _previewSource == 0 ? _selected.UnityPreviewPath : _selected.PreviewPath;
+            _selectedPreview = SyncLibrary.LoadTexture(path);
+        }
+
+        void DrawDetail()
+        {
+            EditorGUILayout.BeginVertical();
+            if (_selected == null)
+            {
+                EditorGUILayout.HelpBox("Sync an element or select one on the left.", MessageType.Info);
+                EditorGUILayout.EndVertical();
+                return;
+            }
+
+            EditorGUILayout.LabelField(_selected.Name, EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(_selected.ManifestPath, EditorStyles.miniLabel);
+            EditorGUILayout.LabelField($"Last synced: {_selected.SyncedAtUtc.ToLocalTime():yyyy-MM-dd HH:mm}", EditorStyles.miniLabel);
+
+            EditorGUILayout.BeginHorizontal();
+            if (_selected.UnityPreviewPath != null)
+            {
+                int newSource = GUILayout.Toolbar(_previewSource, PreviewSources, GUILayout.Width(180));
+                if (newSource != _previewSource)
+                {
+                    _previewSource = newSource;
+                    LoadSelectedPreview();
+                    _fitZoom = true;
+                }
+            }
+            else
+            {
+                _previewSource = 1;
+                GUILayout.Label("No Unity preview yet — press Sync to generate.", EditorStyles.miniLabel);
+            }
+            GUILayout.FlexibleSpace();
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.BeginHorizontal();
+            var newZoom = EditorGUILayout.Slider($"Zoom: {(int)(_zoom * 100)}%", _zoom, 0.1f, 2f);
+            if (!Mathf.Approximately(newZoom, _zoom)) { _zoom = newZoom; _fitZoom = false; }
+            if (GUILayout.Button("Fit", GUILayout.Width(40))) _fitZoom = true;
+            if (GUILayout.Button("1:1", GUILayout.Width(40))) { _zoom = 1f; _fitZoom = false; }
+            GUILayout.Label("Scroll wheel to zoom", EditorStyles.miniLabel);
+            EditorGUILayout.EndHorizontal();
+
+            DrawZoomPreview();
+            DrawLog();
+
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button("Build", GUILayout.Height(26))) DoBuild(_selected);
+            if (GUILayout.Button("Delete", GUILayout.Height(26)))
+            {
+                if (EditorUtility.DisplayDialog(
+                        "Delete synced data",
+                        $"Delete {_selected.Name} from .unity-figma?\n{_selected.Folder}",
+                        "Delete", "Cancel"))
+                {
+                    SyncLibrary.Delete(_selected);
+                    _selected = null;
+                    _selectedPreview = null;
+                    RefreshLibrary();
+                }
+            }
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.EndVertical();
+        }
+
+        void DrawZoomPreview()
+        {
+            var area = GUILayoutUtility.GetRect(100, 4000, 100, 4000, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
+            if (_selectedPreview == null)
+            {
+                GUI.Label(area, "No preview", EditorStyles.centeredGreyMiniLabel);
+                return;
+            }
+
+            var evt = Event.current;
+            if (evt.type == EventType.ScrollWheel && area.Contains(evt.mousePosition))
+            {
+                _zoom = Mathf.Clamp(_zoom * (evt.delta.y < 0 ? 1.1f : 0.9f), 0.1f, 2f);
+                _fitZoom = false;
+                evt.Use();
+                Repaint();
+            }
+
+            if (_fitZoom)
+                _zoom = Mathf.Clamp(
+                    Mathf.Min(area.width / _selectedPreview.width, area.height / _selectedPreview.height),
+                    0.1f, 2f);
+
+            float w = _selectedPreview.width * _zoom;
+            float h = _selectedPreview.height * _zoom;
+            _previewScroll = GUI.BeginScrollView(area, _previewScroll, new Rect(0, 0, w, h));
+            GUI.DrawTexture(new Rect(0, 0, w, h), _selectedPreview, ScaleMode.StretchToFill);
+            GUI.EndScrollView();
+        }
+
+        void DrawLog()
+        {
+            if (_lastLog == null) return;
+            foreach (var entry in _lastLog)
+            {
+                if (entry.Level == BuildLogEntry.LogLevel.Success) continue;
+                EditorGUILayout.HelpBox(entry.Message,
+                    entry.Level == BuildLogEntry.LogLevel.Error ? MessageType.Error : MessageType.Warning);
+            }
+        }
+
+        void DrawStatus()
+        {
+            if (!string.IsNullOrEmpty(_status))
+                EditorGUILayout.HelpBox(_status, _statusIsError ? MessageType.Error : MessageType.Info);
+
+            if (_lastImport != null && GUILayout.Button("Refine with AI (copy prompt + write descriptor)"))
+            {
+                var descPath = Path.Combine(Application.dataPath, "..", "Temp", "figma-last-import.json");
+                ImportDescriptor.Write(Path.GetFullPath(descPath), _lastImport);
+                EditorGUIUtility.systemCopyBuffer = ImportDescriptor.BuildPrompt(_lastImport);
+                SetStatus($"Prompt copied. Descriptor: {Path.GetFullPath(descPath)}", false);
+            }
+        }
+
+        void SetStatus(string msg, bool isError)
+        {
+            _status = msg;
+            _statusIsError = isError;
+            Repaint();
+        }
+    }
+}
+```
+
+Khác biệt chính so với v2 (để reviewer đối chiếu nhanh):
+- Bỏ `Tabs`/`_tab`/`DrawSyncTab`/`DrawLibraryTab`/`DrawSource`/`DrawStagedPreview`;
+  bỏ state `_staged`/`_stagedPreview` (thay bằng `_syncedFolder`/`_syncedUrl`).
+- MenuItem `Window/Figma/Sync` → `Window/Figma/Dashboard`, title "Figma Dashboard".
+- `DoSync` chạy thêm `FigmaPreviewRenderer.ImportAndRender` (OutputMode.None) →
+  `unity-preview.png`, auto-select entry, lưu log.
+- `DoBuild` ping prefab qua `EditorGUIUtility.PingObject`, set `_lastLog`.
+- Detail có toggle `Unity build | Figma` + `DrawLog` (warning/error).
+- `RefreshLibrary` reload preview texture của entry đang chọn (file unity-preview
+  vừa được ghi lại sau Sync).
+
+- [ ] **Step 3: Compile + console + test**
+
+Run: `utk --project /Users/zasuo/Unity/Unity-AI editor refresh --compile`
+Run: `utk --project /Users/zasuo/Unity/Unity-AI console --type error`
+Run: `utk --project /Users/zasuo/Unity/Unity-AI test --filter FigmaImporter.Tests`
+Expected: 0 errors, 11 tests PASS.
+
+- [ ] **Step 4: Verify menu** — trong Unity Editor: menu **Window ▸ Figma** chỉ còn đúng 1 item **Dashboard** (Import và Sync biến mất).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add UnityFigImporter/Editor/FigmaImporterWindow.cs UnityFigImporter/Editor/Sync/FigmaSyncWindow.cs
+git commit -m "feat(unity): single Figma Dashboard — merged view, settings foldout, Unity render preview"
+```
+
+---
+
+### Task 25: README v3 + verify e2e
+
+**Files:**
+- Modify: `UnityFigImporter/README.md` (mục "Realtime Sync window")
+
+- [ ] **Step 1: Thay mục "Realtime Sync window" trong README** bằng:
+
+```markdown
+## Figma Dashboard (Window ▸ Figma ▸ Dashboard)
+
+Menu duy nhất của tool. Sync một element từ Figma, xem ngay **kết quả import
+thật của Unity**, rồi mới Build prefab.
+
+1. Mở Figma Desktop + plugin FigExportForUnity.
+2. Mở **Window ▸ Figma ▸ Dashboard**. Mở foldout **Settings** nếu cần đổi
+   Port (mặc định 1994, nút **Check**), spawn standalone bridge, Output Mode,
+   Prefab Save Path, Sprite Folder.
+3. Bấm **Use current Figma selection** (hoặc dán URL/node-id) → **Sync**.
+4. Sync = export assets + manifest vào `.unity-figma/<node-id>/` **+ chạy
+   pipeline import thật** (textures vào Sprite Folder, dựng hierarchy offscreen)
+   → render `unity-preview.png`. Detail panel hiện đúng những gì Unity sẽ build —
+   thấy ngay lỗi gộp ảnh / nhầm font / nhầm text để quay lại sửa trên Figma.
+   Toggle **Unity build | Figma** để so với render gốc; log warning/error hiện
+   dưới preview.
+5. Ưng rồi thì bấm **Build** → prefab được tạo (Output Mode trong Settings) và
+   được ping trong Project window. Data staging giữ nguyên.
+6. Cột trái: mọi element đã sync (search, tuổi "22m"/"4h"); chọn để xem lại,
+   **Build** lại hoặc **Delete** (xoá khỏi `.unity-figma`).
+7. (tùy chọn) **Refine with AI** sau khi Build để bàn giao cho Claude (figma-build 4-6).
+
+> Khuyến nghị thêm `.unity-figma/` vào `.gitignore` của Unity project.
+```
+
+- [ ] **Step 2: Verify server + plugin**
+
+Run: `cd FigExportForUnity/server && bun test src && bun run build`
+Expected: 24 tests PASS, build OK.
+
+- [ ] **Step 3: Verify e2e thủ công** (cần Figma Desktop + plugin + bridge đang chạy):
+  1. Menu **Window ▸ Figma** → chỉ còn **Dashboard**.
+  2. Dashboard → Settings → Check → "Bridge OK (plugin connected)".
+  3. Use current Figma selection → **Sync** → Expected: entry mới auto-select;
+     detail hiện **Unity render** (toggle ở "Unity build"); file
+     `.unity-figma/<id>/unity-preview.png` tồn tại (`file` cho thấy PNG hợp lệ);
+     sprites đã import vào Sprite Folder; **chưa** có prefab.
+  4. Toggle **Figma** → hiện `preview.png` (render gốc).
+  5. **Build** → prefab tạo tại Prefab Save Path + được ping trong Project window.
+  6. Chọn entry cũ (sync trước v3) → toggle ẩn, hint "No Unity preview yet",
+     hiện Figma preview.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add UnityFigImporter/README.md
+git commit -m "docs(unity): document v3 Figma Dashboard — single menu + Unity render preview"
+```
+
+---
+
+## Self-Review (Phase 4)
+
+**Spec V3 coverage:**
+- Bỏ 2 menu, còn `Window/Figma/Dashboard` → Task 24 Step 1 (xoá attribute Import,
+  giữ class) + Step 2 (MenuItem Dashboard). ✓
+- Gộp Sync + Library thành 1 view → Task 24 `OnGUI` (TopBar/Settings/list+detail/status). ✓
+- Config vào Settings foldout (Port/Check, spawn, Output Mode, Prefab Path, Sprite Folder) → Task 24 `DrawSettings`. ✓
+- Selection button + URL ở ngoài, cạnh Sync → Task 24 `DrawTopBar`. ✓
+- Sync hiển thị kết quả import Unity thật → Task 21 (`OutputMode.None` + `Root`) +
+  Task 23 (`FigmaPreviewRenderer`) + Task 24 `DoSync` (auto-select, toggle mặc định Unity). ✓
+- Toggle Unity/Figma + entry cũ fallback → Task 24 `DrawDetail` + Task 22 (`UnityPreviewPath` null). ✓
+- Log warnings/errors cho QA → Task 24 `DrawLog`. ✓
+- Build ping prefab → Task 24 `DoBuild`. ✓
+- Server blacklist `unity-preview.png` → Task 20. ✓
+- Render fail best-effort → Task 23 catch → Warning log, không fail import. ✓
+- Clamp 2048 → Task 23 `MaxSize` + `fit`. ✓
+
+**Type consistency:** `ImportResult.Root` (Task 21) khớp usage Task 23
+(`result.Root`); `SyncLibrary.UnityPreviewPath`/`LoadTexture` (Task 22) khớp
+Task 24 (`Select`/`LoadSelectedPreview`/`DrawDetail`); `FigmaPreviewRenderer.ImportAndRender(ImportRequest, string)`
+(Task 23) khớp call-site Task 24 `DoSync`; `BuildLogEntry.LogLevel` dùng đúng
+3 mức Success/Warning/Error đã có.
+
+**Placeholder scan:** không có TBD; mọi step có code/lệnh/expected cụ thể.
