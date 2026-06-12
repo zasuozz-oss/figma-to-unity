@@ -46,24 +46,38 @@ plugin** (MCP tool và REST route dùng chung core export).
 
 ## Thành phần
 
-### A. Figma Plugin (`FigExportForUnity/src`) — "URL chuẩn"
+### A. Figma Plugin (`FigExportForUnity/src/main.ts`) — "URL chuẩn"
 
-- Hàm thuần `buildCanonicalUrl(node)` →
-  `{ nodeId: "1234:5678", fileKey, name, url: "https://www.figma.com/design/<fileKey>/<name>?node-id=1234-5678" }`.
-- Gắn `canonicalUrl` + `fileKey` vào payload `get_selection` đang có — **không đổi
-  protocol**, chỉ thêm field. Trung lập để dùng được cho cả 2 chiều sau này.
-- (nhỏ) Nút "Copy Unity URL" trong UI plugin.
+- **Lõi contract là `nodeId`** (dạng colon `1234:5678`) — đây là thứ cả 2 tool thực sự
+  cần (`export_element` đã nhận `nodeId` HOẶC `figmaUrl`).
+- Hàm thuần `buildCanonicalRef(node)` →
+  `{ nodeId: "1234:5678", name, fileKey?, url? }`.
+  - `fileKey` lấy từ `figma.fileKey` **nếu có** — ⚠️ API này có thể trả `undefined`
+    (file chưa lưu / community / quyền hạn); repo hiện **chưa hề** đọc `fileKey` (dùng
+    `figma.root.name`). Khi undefined → bỏ qua `url`, tool vẫn chạy bằng `nodeId`.
+  - `url` (best-effort): `https://www.figma.com/design/<fileKey>/<name>?node-id=1234-5678`.
+- Enrich tại handler `get_selection` (main.ts:511) — hiện trả `serializeNode(node,2)`
+  (chỉ id+name); thêm `nodeId`/`fileKey`/`url`. **Không đổi protocol**, chỉ thêm field.
+- (nhỏ) Nút "Copy Unity ref" trong UI plugin.
 
-### B. Bridge (`FigExportForUnity/server`) — REST API + standalone mode
+### B. Bridge (`FigExportForUnity/server/src`) — REST API + standalone mode
 
-- Tách core export thành **một hàm dùng chung** để MCP tool `export_element` và HTTP
-  route cùng gọi (tránh trùng lặp logic).
-- Thêm routes trên HTTP server 1994 sẵn có (server đã làm `handleUpgrade` cho WS):
+> Sửa **TypeScript source** (`src/*.ts`) rồi rebuild ra `dist/` — không sửa `dist` trực tiếp.
+
+- HTTP server là class **`Leader`** (`src/leader.ts`); router hiện chỉ có `GET /ping`
+  và WS `handleUpgrade`. Thêm `/api/*` ngay trong router của `Leader`.
+- Tách core export thành **một hàm dùng chung** để MCP tool `export_element` (tools.ts)
+  và HTTP route cùng gọi (tránh trùng lặp logic).
+- Routes mới:
   - `GET  /api/health` → `{ ok, role, pluginConnected }`
-  - `GET  /api/selection` → relay selection của plugin (kèm `canonicalUrl`, `nodeId`, `name`)
-  - `POST /api/export_element { nodeId | figmaUrl, scale? }` → `{ outputDir, assetCount, name, nodeCount }`
-- **Entry standalone**: boot HTTP+WS **không** dùng `StdioServerTransport`, để Unity
-  spawn `node dist/<entry>` headless khi không có bridge MCP đang chạy.
+  - `GET  /api/selection` → relay `get_selection` của plugin (kèm `nodeId`, `name`, `fileKey?`, `url?`)
+  - `POST /api/export_element { nodeId | figmaUrl, scale? }` →
+    `{ outputDir, assetCount, name, nodeCount }` — `nodeCount` derive từ
+    `manifest.elements.length` (export hiện chỉ trả `assetCount`).
+- **Entry standalone** (`src/standalone.ts`): boot `Node`+`Election`(→`Leader` HTTP+WS)
+  **không** tạo `McpServer`/`StdioServerTransport`. Routes `/api/*` gọi thẳng `node.send(...)`,
+  không phụ thuộc McpServer. Unity spawn `node dist/standalone.js` headless khi không có
+  bridge MCP đang chạy.
 
 ### C. Unity Editor (`UnityFigImporter/Editor`) — `FigmaSyncWindow`
 
@@ -73,10 +87,13 @@ plugin** (MCP tool và REST route dùng chung core export).
   → nút spawn standalone bridge (ô cấu hình đường dẫn node/bridge, lưu `EditorPrefs`).
 - **Source:** ô Figma URL **+** nút "Use current Figma selection" (gọi `/api/selection`,
   điền URL + hiện tên element).
-- **Options:** dropdown mode (`Both`/`PrefabOnly`/`SceneOnly`), prefab save path,
-  sprite folder — tái dùng settings của `FigmaImporterWindow`.
-- **Sync:** `POST /api/export_element` → `FigmaHeadlessImporter.Import(outputDir, mode,
-  prefabSavePath, spriteFolder)` → **replace prefab nếu trùng tên**.
+- **Options:** dropdown mode (`Both`/`Prefab`/`Scene`) — **UI default = `Both`** (lưu ý
+  `Import` mặc định nội bộ là `"Scene"`), prefab save path, sprite folder — tái dùng
+  settings của `FigmaImporterWindow`.
+- **Sync:** `POST /api/export_element` → `FigmaHeadlessImporter.Import(exportFolder,
+  outputMode, prefabSavePath, spriteFolder)`. **Replace nếu trùng tên là TỰ ĐỘNG**:
+  `HierarchyBuilder` lưu `<savePath>/<root.name>.prefab` qua `SaveAsPrefabAsset`
+  (overwrite cùng path) — không cần code merge.
 - **Result:** render prefab vừa import ra `Texture` preview + dòng status
   `"Done. Built <name> (<N> nodes)"`.
 - **Refine with AI:** ghi `last-import.json` (outputDir, prefabPath, nodeId,
@@ -108,7 +125,7 @@ plugin** (MCP tool và REST route dùng chung core export).
 
 - **Bridge:** `bun:test` cho export-core + parse input của route + `/api/health`
   (theo mẫu `figma-url.test.js`).
-- **Plugin:** unit test `buildCanonicalUrl` (hàm thuần).
+- **Plugin:** unit test `buildCanonicalRef` (hàm thuần) — cả nhánh có/không `fileKey`.
 - **Unity:** EditMode test cho URL/node-id parser + writer của `last-import.json`.
 
 ## Ngoài phạm vi (YAGNI)
@@ -116,3 +133,14 @@ plugin** (MCP tool và REST route dùng chung core export).
 - **Không** build Unity→Figma push lúc này — chỉ làm URL chuẩn để tái dùng sau.
 - **Không** merge/re-sync giữ component đã wire — replace là overwrite.
 - **Không** tự khởi động Claude — AI handoff chỉ chuẩn bị descriptor + prompt.
+
+## Rủi ro / điểm cần xác nhận khi làm plan
+
+- **`figma.fileKey` có thể `undefined`** → URL đầy đủ là best-effort; mọi tool phải chạy
+  được chỉ với `nodeId`. (Repo hiện chưa dùng fileKey bao giờ.)
+- **Spawn standalone bridge từ Unity**: cần biết đường dẫn `node` + `dist/standalone.js`;
+  nếu Unity đang chạy trong môi trường không có Node trong PATH → phải cấu hình tay
+  (ô đường dẫn trong EditorPrefs).
+- **Race khi đồng thời có MCP bridge + standalone**: chỉ một tiến trình bind được
+  port 1994 (Election xử lý leader/follower) → Unity luôn probe `/api/health` trước,
+  không spawn nếu đã sống.
