@@ -144,3 +144,100 @@ plugin** (MCP tool và REST route dùng chung core export).
 - **Race khi đồng thời có MCP bridge + standalone**: chỉ một tiến trình bind được
   port 1994 (Election xử lý leader/follower) → Unity luôn probe `/api/health` trước,
   không spawn nếu đã sống.
+
+---
+
+# V2: Tách Sync/Build + staging `.unity-figma` + Library tab
+
+**Ngày:** 2026-06-12 (cùng ngày, sau khi v1 được verify và commit)
+**Trạng thái:** Đã chốt design với user → writing-plans (Phase 3)
+
+## Thay đổi hành vi so với v1
+
+| Hạng mục | v1 | v2 |
+|----------|----|----|
+| Nút Sync | Export + **build prefab ngay** | Chỉ export asset/json + **preview ảnh thật từ Figma** vào staging; **KHÔNG build** |
+| Build prefab | Tự động sau Sync | Nút **Build** riêng — chạy `FigmaImportRunner` từ folder staging |
+| Nơi lưu export | `~/Desktop/FigmaImports/<name>` | `<UnityProject>/.unity-figma/<node-id-hyphen>/` (dot-prefix → Unity bỏ qua) |
+| Preview | Render prefab Unity (`AssetPreview`) | `preview.png` thật do plugin render (`get_screenshot` relay, server ghi file) |
+| Quản lý | Không có | **Library tab** trong cùng FigmaSyncWindow: list + detail + Build/Delete |
+| Dữ liệu sau Build | n/a | **Giữ lại** trong `.unity-figma`; chỉ xoá qua Library tab |
+
+Quyết định đã chốt qua AskUserQuestion: dashboard = **tab trong FigmaSyncWindow**
+(không phải window riêng); data sau Build = **giữ lại**, chỉ xoá thủ công qua Library.
+
+## Staging folder `.unity-figma`
+
+- Vị trí: ngang hàng `Assets/` — `Path.Combine(Path.GetDirectoryName(Application.dataPath), ".unity-figma")`.
+- Mỗi element một subfolder đặt tên theo nodeId dạng hyphen (`6839:39318` → `6839-39318/`).
+  Re-sync cùng node → ghi đè cùng folder (server đã `emptyDir` trước khi ghi).
+- Nội dung folder: `manifest.json` + các PNG asset + `preview.png`.
+- Dot-prefix nên Unity asset pipeline bỏ qua hoàn toàn — không sinh `.meta`, không import.
+
+## Server: `includePreview` trên `/api/export_element`
+
+- `exportElementToDisk(sender, input)` nhận thêm `includePreview?: boolean`.
+- Sau khi ghi assets: nếu `includePreview`, relay `get_screenshot [nodeId] {format:"PNG"}`
+  → `getSingleScreenshotExport` → ghi `preview.png` vào outputDir. **Best-effort**:
+  screenshot lỗi không làm export fail; chỉ trả `previewFile: null`.
+- `ExportElementResult` thêm `previewFile: string | null` (`"preview.png"` khi thành công).
+- `isSafeAssetFileName` blacklist thêm `preview.png` (asset từ plugin không được đè preview).
+- Route `handleExportElement` parse thêm `includePreview` từ body.
+
+## Unity: `SyncLibrary` (model cho staging + Library tab)
+
+`UnityFigImporter/Editor/Sync/SyncLibrary.cs` — static class:
+
+- `Entry { Folder, Name, NodeId, ManifestPath, PreviewPath, NodeCount, SyncedAtUtc }`.
+- `Root` → đường dẫn `.unity-figma`; `FolderFor(nodeId)` → subfolder hyphen.
+- `List()` — scan `Root`, parse từng `manifest.json` (JObject: `screen.name`,
+  `elements.Count`), `SyncedAtUtc` = write time của manifest; sort mới nhất trước.
+- `Delete(entry)` — `Directory.Delete(folder, recursive)`.
+- `LoadPreview(entry)` → `Texture2D` qua `ImageConversion.LoadImage` (null nếu thiếu file).
+- `FormatAge(DateTime)` → `"0m"`, `"22m"`, `"4h"`, `"3d"` (theo UI tham chiếu).
+
+## Unity: FigmaSyncWindow v2 — 2 tab
+
+Toolbar 2 tab: **Sync** | **Library**.
+
+### Tab Sync (luồng mới)
+
+1. Connection + Source giữ nguyên v1.
+2. **[Sync]** → `TryExportElement(nodeId, outputDir: SyncLibrary.FolderFor(nodeId))`
+   với `includePreview:true`. NodeId **bắt buộc** resolve client-side qua
+   `FigmaSyncUrl.ExtractNodeId` (bỏ fallback gửi figmaUrl thô — tên folder cần nodeId).
+   Sau sync: hiện `preview.png` + status `"Synced <name> (N nodes) → .unity-figma/<id>"`.
+3. Options (OutputMode/PrefabSavePath/SpriteFolder) + **[Build]** — enable khi đã có
+   entry staged; chạy `FigmaImportRunner.Run` với `ExportFolder` = folder staging.
+   Build xong: status + nút "Refine with AI" như v1. Data staging giữ nguyên.
+
+### Tab Library (master-detail, theo UI tham chiếu UI Creator)
+
+- **Trái (cột hẹp):** nút `Refresh` + ô search (lọc theo tên, case-insensitive) +
+  scroll list các entry: mỗi dòng = tên + tuổi (`FormatAge`, ví dụ `22m`). Click chọn.
+- **Phải (detail):** tên đậm, đường dẫn manifest, `Last synced: yyyy-MM-dd HH:mm`,
+  hàng Zoom: slider `Zoom %` (0.1–2.0) + nút `Fit` (auto-fit vào khung) + `1:1` +
+  hint "Scroll wheel to zoom"; khung preview scrollable, scroll-wheel zoom
+  (`EventType.ScrollWheel` + `evt.Use()`); hàng action: **[Build]** (import từ folder
+  entry, dùng Options hiện tại) + **[Delete]** (confirm dialog → `SyncLibrary.Delete`
+  + refresh list).
+
+## Error handling bổ sung
+
+| Tình huống | Hành vi |
+|-----------|---------|
+| Screenshot preview fail (server) | Export vẫn OK, `previewFile:null`; window hiện placeholder "No preview" |
+| nodeId không parse được | Status lỗi "Invalid Figma URL or node-id" — không gửi request |
+| manifest.json hỏng/thiếu trong entry | `List()` bỏ qua folder đó (skip, không throw) |
+| Delete entry đang chọn | Clear selection + texture, refresh list |
+
+## Testing (Phase 3)
+
+- **Bridge:** test `exportElementToDisk` với `includePreview:true` (fakeSender trả
+  cả export_element + get_screenshot) — verify `preview.png` được ghi + `previewFile`;
+  test screenshot fail → export vẫn thành công, `previewFile:null`; test blacklist
+  `preview.png` trong asset name.
+- **Unity EditMode:** `SyncLibraryTests` — `FolderFor` hyphen hoá, `List()` trên temp
+  folder có manifest giả, skip folder hỏng, `FormatAge` các mốc m/h/d.
+- **Manual:** Sync → kiểm `.unity-figma/<id>/preview.png` hiện trong window → Build →
+  prefab xuất hiện → Library tab list/search/zoom/Delete.
