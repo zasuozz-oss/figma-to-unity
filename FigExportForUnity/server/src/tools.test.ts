@@ -15,10 +15,46 @@ function fakeSender(data: unknown) {
   };
 }
 
+function typedSender(
+  map: Record<string, unknown>,
+  errors: Record<string, string> = {}
+) {
+  return {
+    sendWithParams: async (type: string): Promise<BridgeResponse> => ({
+      type: "response",
+      requestId: "x",
+      data: map[type],
+      error: errors[type],
+    }),
+  };
+}
+
 const samplePayload = {
   manifest: { screen: { name: "Shop Popup" }, elements: [{}, {}, {}] },
   assets: [{ name: "icon.png", data: [137, 80, 78, 71] }],
 };
+
+const pngBase64 = Buffer.from([137, 80, 78, 71]).toString("base64");
+const screenshotPayload = {
+  exports: [
+    {
+      nodeId: "4029:12345",
+      nodeName: "Shop Popup",
+      format: "PNG",
+      base64: pngBase64,
+      width: 4,
+      height: 1,
+    },
+  ],
+};
+const pluginScreenshotPayload = [
+  {
+    nodeId: "4029:12345",
+    name: "Shop Popup",
+    format: "PNG",
+    data: [137, 80, 78, 71],
+  },
+];
 
 describe("getManifestSummary", () => {
   test("reads name + nodeCount from manifest", () => {
@@ -54,5 +90,83 @@ describe("exportElementToDisk", () => {
       await readFile(path.join(result.outputDir, "manifest.json"), "utf8")
     );
     expect(manifest.screen.name).toBe("Shop Popup");
+  });
+});
+
+describe("exportElementToDisk includePreview", () => {
+  test("writes preview.png and returns previewFile", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "figexp-"));
+    const sender = typedSender({
+      export_element: samplePayload,
+      get_screenshot: screenshotPayload,
+    });
+    const result = await exportElementToDisk(sender, {
+      nodeId: "4029:12345",
+      outputDir: dir,
+      includePreview: true,
+    });
+
+    expect(result.previewFile).toBe("preview.png");
+    const files = (await readdir(result.outputDir)).sort();
+    expect(files).toEqual(["icon.png", "manifest.json", "preview.png"]);
+    const png = await readFile(path.join(result.outputDir, "preview.png"));
+    expect([...png]).toEqual([137, 80, 78, 71]);
+  });
+
+  test("screenshot failure does not fail the export (best-effort)", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "figexp-"));
+    const sender = typedSender(
+      { export_element: samplePayload },
+      { get_screenshot: "screenshot failed" }
+    );
+    const result = await exportElementToDisk(sender, {
+      nodeId: "4029:12345",
+      outputDir: dir,
+      includePreview: true,
+    });
+
+    expect(result.previewFile).toBeNull();
+    const files = (await readdir(result.outputDir)).sort();
+    expect(files).toEqual(["icon.png", "manifest.json"]);
+  });
+
+  test("writes preview from plugin screenshot byte-array response", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "figexp-"));
+    const sender = typedSender({
+      export_element: samplePayload,
+      get_screenshot: pluginScreenshotPayload,
+    });
+    const result = await exportElementToDisk(sender, {
+      nodeId: "4029:12345",
+      outputDir: dir,
+      includePreview: true,
+    });
+
+    expect(result.previewFile).toBe("preview.png");
+    const png = await readFile(path.join(result.outputDir, "preview.png"));
+    expect([...png]).toEqual([137, 80, 78, 71]);
+  });
+
+  test("previewFile null when includePreview omitted", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "figexp-"));
+    const result = await exportElementToDisk(fakeSender(samplePayload), {
+      nodeId: "4029:12345",
+      outputDir: dir,
+    });
+    expect(result.previewFile).toBeNull();
+  });
+
+  test("rejects plugin asset named preview.png", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "figexp-"));
+    const evil = {
+      manifest: samplePayload.manifest,
+      assets: [{ name: "preview.png", data: [1, 2, 3] }],
+    };
+    await expect(
+      exportElementToDisk(fakeSender(evil), {
+        nodeId: "4029:12345",
+        outputDir: dir,
+      })
+    ).rejects.toThrow(/Unsafe/);
   });
 });

@@ -28,8 +28,8 @@ interface ScreenshotExport {
   nodeName: string;
   format: ExportFormat;
   base64: string;
-  width: number;
-  height: number;
+  width?: number;
+  height?: number;
 }
 
 interface ExportElementAsset {
@@ -355,11 +355,13 @@ function resolveExportFormat(
 }
 
 function getSingleScreenshotExport(data: unknown): ScreenshotExport {
-  if (!data || typeof data !== "object") {
+  if (!data || (typeof data !== "object" && !Array.isArray(data))) {
     throw new Error("Invalid screenshot response from plugin");
   }
 
-  const exports = (data as { exports?: unknown }).exports;
+  const exports = Array.isArray(data)
+    ? data
+    : (data as { exports?: unknown }).exports;
   if (!Array.isArray(exports) || exports.length === 0) {
     throw new Error("No screenshot export returned by plugin");
   }
@@ -368,17 +370,58 @@ function getSingleScreenshotExport(data: unknown): ScreenshotExport {
   if (
     !first ||
     typeof first !== "object" ||
-    typeof (first as { nodeId?: unknown }).nodeId !== "string" ||
-    typeof (first as { nodeName?: unknown }).nodeName !== "string" ||
-    typeof (first as { base64?: unknown }).base64 !== "string" ||
-    typeof (first as { width?: unknown }).width !== "number" ||
-    typeof (first as { height?: unknown }).height !== "number"
+    typeof (first as { nodeId?: unknown }).nodeId !== "string"
   ) {
     throw new Error("Malformed screenshot export payload");
   }
 
-  const screenshot = first as ScreenshotExport;
-  return screenshot;
+  const raw = first as {
+    nodeId: string;
+    nodeName?: unknown;
+    name?: unknown;
+    format?: unknown;
+    base64?: unknown;
+    data?: unknown;
+    width?: unknown;
+    height?: unknown;
+  };
+  const nodeName =
+    typeof raw.nodeName === "string"
+      ? raw.nodeName
+      : typeof raw.name === "string"
+        ? raw.name
+        : "";
+  const format =
+    typeof raw.format === "string" ? (raw.format as ExportFormat) : "PNG";
+  const width = typeof raw.width === "number" ? raw.width : undefined;
+  const height = typeof raw.height === "number" ? raw.height : undefined;
+
+  if (typeof raw.base64 === "string") {
+    return { nodeId: raw.nodeId, nodeName, format, base64: raw.base64, width, height };
+  }
+
+  if (Array.isArray(raw.data)) {
+    for (const byte of raw.data) {
+      if (
+        typeof byte !== "number" ||
+        !Number.isInteger(byte) ||
+        byte < 0 ||
+        byte > 255
+      ) {
+        throw new Error("Malformed byte data for screenshot export");
+      }
+    }
+    return {
+      nodeId: raw.nodeId,
+      nodeName,
+      format,
+      base64: Buffer.from(raw.data as number[]).toString("base64"),
+      width,
+      height,
+    };
+  }
+
+  throw new Error("Malformed screenshot export payload");
 }
 
 export interface ExportElementResult {
@@ -388,6 +431,7 @@ export interface ExportElementResult {
   assets: string[];
   name: string;
   nodeCount: number;
+  previewFile: string | null;
 }
 
 /** Reads { name, nodeCount } from a manifest, with safe defaults. */
@@ -409,7 +453,13 @@ export function getManifestSummary(manifest: unknown): {
  */
 export async function exportElementToDisk(
   sender: ScreenshotSender,
-  input: { nodeId?: string; figmaUrl?: string; outputDir?: string; scale?: number }
+  input: {
+    nodeId?: string;
+    figmaUrl?: string;
+    outputDir?: string;
+    scale?: number;
+    includePreview?: boolean;
+  }
 ): Promise<ExportElementResult> {
   const resolvedNodeId = parseFigmaNodeId({
     nodeId: input.nodeId,
@@ -441,6 +491,28 @@ export async function exportElementToDisk(
     await writeFile(path.join(resolvedDir, asset.name), Buffer.from(asset.data));
   }
 
+  let previewFile: string | null = null;
+  if (input.includePreview) {
+    try {
+      const shot = await sender.sendWithParams(
+        "get_screenshot",
+        [resolvedNodeId],
+        { format: "PNG" },
+        120_000
+      );
+      if (shot.error) throw new Error(shot.error);
+      const screenshot = getSingleScreenshotExport(shot.data);
+      await writeFile(
+        path.join(resolvedDir, "preview.png"),
+        Buffer.from(screenshot.base64, "base64")
+      );
+      previewFile = "preview.png";
+    } catch {
+      // Best-effort: a failed preview must never fail the export itself.
+      previewFile = null;
+    }
+  }
+
   return {
     nodeId: resolvedNodeId,
     outputDir: resolvedDir,
@@ -448,6 +520,7 @@ export async function exportElementToDisk(
     assets: payload.assets.map((a) => a.name),
     name: summary.name,
     nodeCount: summary.nodeCount,
+    previewFile,
   };
 }
 
@@ -507,6 +580,7 @@ function isSafeAssetFileName(name: string): boolean {
     name !== "." &&
     name !== ".." &&
     lowerName !== "manifest.json" &&
+    lowerName !== "preview.png" &&
     lowerName.endsWith(".png") &&
     !name.includes("\0") &&
     !path.isAbsolute(name) &&

@@ -173,6 +173,7 @@ export class Leader {
           figmaUrl?: string;
           outputDir?: string;
           scale?: number;
+          includePreview?: boolean;
         };
         const result = await exportElementToDisk(this.bridge, input);
         this.sendJSON(res, 200, { data: result });

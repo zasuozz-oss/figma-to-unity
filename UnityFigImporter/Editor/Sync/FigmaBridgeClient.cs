@@ -25,7 +25,7 @@ namespace FigmaImporter.Sync
         public class SelectionInfo { public string nodeId; public string name; public string fileKey; public string url; }
 
         [Serializable]
-        public class ExportResult { public string nodeId; public string outputDir; public int assetCount; public string name; public int nodeCount; }
+        public class ExportResult { public string nodeId; public string outputDir; public int assetCount; public string name; public int nodeCount; public string previewFile; }
 
         class Envelope<T> { public T data; public string error; }
 
@@ -39,9 +39,9 @@ namespace FigmaImporter.Sync
             return Get("/api/selection", out info, out error);
         }
 
-        public bool TryExportElement(string nodeId, string figmaUrl, out ExportResult result, out string error)
+        public bool TryExportElement(string nodeId, string outputDir, out ExportResult result, out string error)
         {
-            var body = JsonConvert.SerializeObject(new { nodeId, figmaUrl });
+            var body = JsonConvert.SerializeObject(new { nodeId, outputDir, includePreview = true });
             return Post("/api/export_element", body, out result, out error);
         }
 

@@ -267,7 +267,8 @@ export type McpRequestType =
     | 'get_metadata'
     | 'get_design_context'
     | 'get_variable_defs'
-    | 'get_screenshot';
+    | 'get_screenshot'
+    | 'export_element';
 
 export interface McpServerRequest {
     type: McpRequestType;
