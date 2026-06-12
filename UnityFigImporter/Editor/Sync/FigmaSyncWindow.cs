@@ -60,7 +60,6 @@ namespace FigmaImporter.Sync
 
         void OnGUI()
         {
-            DrawTopBar();
             DrawSettings();
             EditorGUILayout.Space(4);
             EditorGUILayout.BeginHorizontal();
@@ -314,6 +313,8 @@ namespace FigmaImporter.Sync
         void DrawDetail()
         {
             EditorGUILayout.BeginVertical();
+            DrawTopBar();
+            EditorGUILayout.Space(4);
             if (_selected == null)
             {
                 EditorGUILayout.HelpBox("Sync an element or select one on the left.", MessageType.Info);
