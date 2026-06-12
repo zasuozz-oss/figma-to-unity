@@ -50,10 +50,12 @@ thật của Unity**, rồi mới Build prefab.
 4. Sync = export assets + manifest vào `.unity-figma/<node-id>/` **+ dựng
    hierarchy thật bằng sprite in-memory** (không ghi gì vào `Assets/` — không
    import texture, không tạo atlas) → render `unity-preview.png` offscreen.
-   Detail panel hiện đúng những gì Unity sẽ build — thấy ngay lỗi gộp ảnh /
-   nhầm font / nhầm text để quay lại sửa trên Figma. Toggle
-   **Unity build | Figma** để so với render gốc; panel **Child Nodes** bên trái
-   preview liệt kê cây node của element; log warning/error hiện dưới preview.
+   Detail panel hiện đúng những gì Unity sẽ build (nền trong suốt, khớp render
+   Figma) — thấy ngay lỗi gộp ảnh / nhầm font / nhầm text để quay lại sửa trên
+   Figma. Panel **Child Nodes** bên trái preview là tree mở rộng/thu nhỏ được:
+   click 1 node để highlight đúng vị trí của nó trên preview, double-click (hoặc
+   F2) để đổi tên — tên mới lưu vào manifest và Build sẽ dùng làm tên GameObject.
+   Log warning/error hiện dưới preview.
 5. Ưng rồi thì bấm **Build** → lúc này texture mới được import vào Sprite
    Folder và prefab được tạo (Output Mode trong Settings), prefab được ping
    trong Project window. Data staging giữ nguyên.

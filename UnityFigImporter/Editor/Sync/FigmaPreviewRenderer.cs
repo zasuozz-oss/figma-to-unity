@@ -129,7 +129,9 @@ namespace FigmaImporter.Sync
                 camGO = new GameObject("~FigmaPreviewCamera") { hideFlags = HideFlags.HideAndDontSave };
                 var cam = camGO.AddComponent<Camera>();
                 cam.clearFlags = CameraClearFlags.SolidColor;
-                cam.backgroundColor = new Color(0.16f, 0.16f, 0.16f, 1f);
+                // Transparent like Figma's own preview.png, so empty areas
+                // don't show as dark blocks when comparing the two renders.
+                cam.backgroundColor = new Color(0f, 0f, 0f, 0f);
                 cam.cullingMask = 1 << UILayer;
                 cam.orthographic = true;
                 cam.nearClipPlane = 0.1f;

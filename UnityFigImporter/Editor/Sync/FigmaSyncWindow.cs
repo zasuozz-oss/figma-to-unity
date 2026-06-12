@@ -2,7 +2,9 @@ using System.Collections.Generic;
 using System.IO;
 using FigmaImporter;
 using FigmaImporter.Data;
+using Newtonsoft.Json.Linq;
 using UnityEditor;
+using UnityEditor.IMGUI.Controls;
 using UnityEngine;
 
 namespace FigmaImporter.Sync
@@ -11,8 +13,6 @@ namespace FigmaImporter.Sync
     {
         const string PREF_PORT = "FigmaSync_Port";
         const string PREF_SPRITE_FOLDER = "FigmaImporter_SpriteFolder";
-
-        static readonly string[] PreviewSources = { "Unity build", "Figma" };
 
         int _port = 1994;
         string _figmaUrl = "";
@@ -35,17 +35,16 @@ namespace FigmaImporter.Sync
         string _search = "";
         SyncLibrary.Entry _selected;
         Texture2D _selectedPreview;
-        int _previewSource;
         float _zoom = 1f;
         bool _fitZoom = true;
-        Vector2 _listScroll, _previewScroll, _nodeTreeScroll;
+        Vector2 _listScroll, _previewScroll;
 
-        struct NodeRow
-        {
-            public int Depth;
-            public string Label;
-        }
-        readonly List<NodeRow> _nodeTree = new List<NodeRow>();
+        ManifestData _manifest;
+        readonly Dictionary<string, ElementData> _elementsById = new Dictionary<string, ElementData>();
+        TreeViewState _treeState;
+        FigmaNodeTreeView _treeView;
+        string _highlightElementId;
+        GUIStyle _headerBrandStyle, _headerBrowseStyle;
 
         [MenuItem("Window/Figma/Dashboard")]
         public static void Open()
@@ -68,6 +67,7 @@ namespace FigmaImporter.Sync
 
         void OnGUI()
         {
+            DrawHeader();
             DrawSettings();
             EditorGUILayout.Space(4);
             EditorGUILayout.BeginHorizontal();
@@ -76,6 +76,32 @@ namespace FigmaImporter.Sync
             EditorGUILayout.EndHorizontal();
             EditorGUILayout.Space(4);
             DrawStatus();
+        }
+
+        void DrawHeader()
+        {
+            if (_headerBrandStyle == null)
+            {
+                _headerBrandStyle = new GUIStyle(EditorStyles.boldLabel)
+                {
+                    alignment = TextAnchor.MiddleCenter,
+                    normal = { textColor = Color.white },
+                };
+                _headerBrowseStyle = new GUIStyle(EditorStyles.boldLabel)
+                {
+                    alignment = TextAnchor.MiddleCenter,
+                    normal = { textColor = new Color(0.12f, 0.12f, 0.12f) },
+                };
+            }
+
+            var rect = GUILayoutUtility.GetRect(0, 26, GUILayout.ExpandWidth(true));
+            EditorGUI.DrawRect(rect, new Color(0.13f, 0.13f, 0.13f, 1f));
+            var brand = new Rect(rect.x, rect.y, 150, rect.height);
+            EditorGUI.DrawRect(brand, new Color(0.18f, 0.55f, 0.25f, 1f));
+            GUI.Label(brand, "Figma Dashboard", _headerBrandStyle);
+            var browse = new Rect(brand.xMax + 2, rect.y, rect.width - brand.width - 2, rect.height);
+            EditorGUI.DrawRect(browse, new Color(0.95f, 0.62f, 0.12f, 1f));
+            GUI.Label(browse, $"Browse ({_entries.Count})", _headerBrowseStyle);
         }
 
         void DrawTopBar()
@@ -305,7 +331,6 @@ namespace FigmaImporter.Sync
         void Select(SyncLibrary.Entry entry)
         {
             _selected = entry;
-            _previewSource = entry != null && entry.UnityPreviewPath != null ? 0 : 1;
             LoadSelectedPreview();
             BuildNodeTree();
             _fitZoom = true;
@@ -314,47 +339,134 @@ namespace FigmaImporter.Sync
 
         void BuildNodeTree()
         {
-            _nodeTree.Clear();
+            _manifest = null;
+            _elementsById.Clear();
+            _highlightElementId = null;
+
+            if (_treeView == null)
+            {
+                _treeState = new TreeViewState();
+                _treeView = new FigmaNodeTreeView(_treeState)
+                {
+                    ElementSelected = id => { _highlightElementId = id; Repaint(); },
+                    ElementRenamed = OnNodeRenamed,
+                };
+            }
+
             if (_selected == null || string.IsNullOrEmpty(_selected.ManifestPath)
                 || !File.Exists(_selected.ManifestPath))
+            {
+                _treeView.SetData(null);
                 return;
+            }
 
-            var manifest = ManifestParser.ParseFromFile(_selected.ManifestPath);
-            if (manifest?.Elements == null) return;
+            _manifest = ManifestParser.ParseFromFile(_selected.ManifestPath);
+            if (_manifest?.Elements == null)
+            {
+                _treeView.SetData(null);
+                return;
+            }
 
-            var byId = new Dictionary<string, ElementData>();
-            foreach (var element in manifest.Elements)
-                if (!string.IsNullOrEmpty(element.Id) && !byId.ContainsKey(element.Id))
-                    byId[element.Id] = element;
+            var nodes = new Dictionary<string, FigmaNodeTreeView.Node>();
+            foreach (var element in _manifest.Elements)
+            {
+                if (string.IsNullOrEmpty(element.Id) || nodes.ContainsKey(element.Id)) continue;
+                _elementsById[element.Id] = element;
+                nodes[element.Id] = new FigmaNodeTreeView.Node
+                {
+                    ElementId = element.Id,
+                    Name = element.Name,
+                    FigmaType = element.FigmaType,
+                };
+            }
 
-            var visited = new HashSet<string>();
-            foreach (var element in manifest.Elements)
-                if (string.IsNullOrEmpty(element.ParentId))
-                    AppendNodeRows(element, byId, 0, visited);
+            var roots = new List<FigmaNodeTreeView.Node>();
+            foreach (var element in _manifest.Elements)
+            {
+                if (string.IsNullOrEmpty(element.Id) || !nodes.TryGetValue(element.Id, out var node)) continue;
+                if (!string.IsNullOrEmpty(element.ParentId)
+                    && element.ParentId != element.Id
+                    && nodes.TryGetValue(element.ParentId, out var parent))
+                    parent.Children.Add(node);
+                else
+                    roots.Add(node);
+            }
+            _treeView.SetData(roots);
         }
 
-        void AppendNodeRows(ElementData element, Dictionary<string, ElementData> byId, int depth, HashSet<string> visited)
+        /// <summary>
+        /// Persist a tree rename into manifest.json so Build names the
+        /// GameObject accordingly. The staging file is the single source of
+        /// truth for the hierarchy.
+        /// </summary>
+        void OnNodeRenamed(string elementId, string newName)
         {
-            if (element == null || !visited.Add(element.Id)) return;
-            _nodeTree.Add(new NodeRow
+            if (_selected == null || string.IsNullOrEmpty(_selected.ManifestPath)) return;
+            try
             {
-                Depth = depth,
-                Label = string.IsNullOrEmpty(element.FigmaType)
-                    ? element.Name
-                    : $"{element.Name}  ({element.FigmaType})",
-            });
-            if (element.Children == null) return;
-            foreach (var childId in element.Children)
-                if (byId.TryGetValue(childId, out var child))
-                    AppendNodeRows(child, byId, depth + 1, visited);
+                var json = JObject.Parse(File.ReadAllText(_selected.ManifestPath));
+                if (json["elements"] is JArray elements)
+                {
+                    foreach (var token in elements)
+                    {
+                        if ((string)token["id"] == elementId)
+                        {
+                            token["name"] = newName;
+                            break;
+                        }
+                    }
+                }
+                File.WriteAllText(_selected.ManifestPath, json.ToString());
+                if (_elementsById.TryGetValue(elementId, out var element))
+                    element.Name = newName;
+                SetStatus($"Renamed node to \"{newName}\" - saved to manifest; Build will use it.", false);
+            }
+            catch (System.Exception ex)
+            {
+                SetStatus("Rename failed: " + ex.Message, true);
+            }
+        }
+
+        /// <summary>
+        /// Absolute rect of an element in Figma units relative to the synced
+        /// root (manifest rects are parent-relative; the root's own offset is
+        /// its position on the Figma page, so it is excluded).
+        /// </summary>
+        bool TryGetElementRect(string elementId, out Rect rect)
+        {
+            rect = default;
+            if (string.IsNullOrEmpty(elementId)
+                || !_elementsById.TryGetValue(elementId, out var element)
+                || element.Rect == null)
+                return false;
+
+            if (string.IsNullOrEmpty(element.ParentId))
+            {
+                rect = new Rect(0, 0, element.Rect.W, element.Rect.H);
+                return true;
+            }
+
+            float x = element.Rect.X, y = element.Rect.Y;
+            var cur = element;
+            for (int guard = 0; guard < 100; guard++)
+            {
+                if (string.IsNullOrEmpty(cur.ParentId)
+                    || !_elementsById.TryGetValue(cur.ParentId, out var parent))
+                    break;
+                if (string.IsNullOrEmpty(parent.ParentId)) break; // root: page offset excluded
+                if (parent.Rect != null) { x += parent.Rect.X; y += parent.Rect.Y; }
+                cur = parent;
+            }
+            rect = new Rect(x, y, element.Rect.W, element.Rect.H);
+            return true;
         }
 
         void LoadSelectedPreview()
         {
             _selectedPreview = null;
             if (_selected == null) return;
-            var path = _previewSource == 0 ? _selected.UnityPreviewPath : _selected.PreviewPath;
-            _selectedPreview = SyncLibrary.LoadTexture(path);
+            _selectedPreview = SyncLibrary.LoadTexture(
+                _selected.UnityPreviewPath ?? _selected.PreviewPath);
         }
 
         void DrawDetail()
@@ -377,24 +489,8 @@ namespace FigmaImporter.Sync
             DrawNodeTree();
             EditorGUILayout.BeginVertical();
 
-            EditorGUILayout.BeginHorizontal();
-            if (_selected.UnityPreviewPath != null)
-            {
-                int newSource = GUILayout.Toolbar(_previewSource, PreviewSources, GUILayout.Width(180));
-                if (newSource != _previewSource)
-                {
-                    _previewSource = newSource;
-                    LoadSelectedPreview();
-                    _fitZoom = true;
-                }
-            }
-            else
-            {
-                _previewSource = 1;
-                GUILayout.Label("No Unity preview yet - press Sync to generate.", EditorStyles.miniLabel);
-            }
-            GUILayout.FlexibleSpace();
-            EditorGUILayout.EndHorizontal();
+            if (_selected.UnityPreviewPath == null)
+                GUILayout.Label("Showing Figma render - press Sync to generate the Unity preview.", EditorStyles.miniLabel);
 
             EditorGUILayout.BeginHorizontal();
             var newZoom = EditorGUILayout.Slider($"Zoom: {(int)(_zoom * 100)}%", _zoom, 0.1f, 2f);
@@ -432,24 +528,12 @@ namespace FigmaImporter.Sync
 
         void DrawNodeTree()
         {
-            EditorGUILayout.BeginVertical(GUILayout.Width(220));
-            EditorGUILayout.LabelField($"Child Nodes ({_nodeTree.Count})", EditorStyles.boldLabel);
-            _nodeTreeScroll = EditorGUILayout.BeginScrollView(_nodeTreeScroll);
-            if (_nodeTree.Count == 0)
-            {
-                GUILayout.Label("No node data in manifest.", EditorStyles.centeredGreyMiniLabel);
-            }
-            else
-            {
-                foreach (var row in _nodeTree)
-                {
-                    EditorGUILayout.BeginHorizontal();
-                    GUILayout.Space(4 + row.Depth * 12);
-                    GUILayout.Label(row.Label, EditorStyles.label);
-                    EditorGUILayout.EndHorizontal();
-                }
-            }
-            EditorGUILayout.EndScrollView();
+            EditorGUILayout.BeginVertical(GUILayout.Width(240));
+            EditorGUILayout.LabelField("Child Nodes", EditorStyles.boldLabel);
+            GUILayout.Label("Click: highlight on preview · Double-click: rename", EditorStyles.miniLabel);
+            var rect = GUILayoutUtility.GetRect(
+                100, 4000, 100, 4000, GUILayout.Width(240), GUILayout.ExpandHeight(true));
+            _treeView?.OnGUI(rect);
             EditorGUILayout.EndVertical();
         }
 
@@ -480,7 +564,33 @@ namespace FigmaImporter.Sync
             float h = _selectedPreview.height * _zoom;
             _previewScroll = GUI.BeginScrollView(area, _previewScroll, new Rect(0, 0, w, h));
             GUI.DrawTexture(new Rect(0, 0, w, h), _selectedPreview, ScaleMode.StretchToFill);
+            DrawNodeHighlight(w);
             GUI.EndScrollView();
+            DrawFrame(area, new Color(0.95f, 0.62f, 0.12f, 1f));
+        }
+
+        /// <summary>Outline the tree-selected element on the preview image.</summary>
+        void DrawNodeHighlight(float zoomedTexWidth)
+        {
+            if (!TryGetElementRect(_highlightElementId, out var figmaRect)) return;
+            float figmaW = _manifest?.Screen?.FigmaSize?.W ?? 0;
+            if (figmaW <= 0) return;
+
+            float s = zoomedTexWidth / figmaW; // figma units -> on-screen pixels
+            var r = new Rect(
+                figmaRect.x * s, figmaRect.y * s,
+                Mathf.Max(2, figmaRect.width * s), Mathf.Max(2, figmaRect.height * s));
+            var accent = new Color(0.2f, 0.75f, 1f, 1f);
+            EditorGUI.DrawRect(r, new Color(accent.r, accent.g, accent.b, 0.15f));
+            DrawFrame(r, accent);
+        }
+
+        static void DrawFrame(Rect r, Color color)
+        {
+            EditorGUI.DrawRect(new Rect(r.x, r.y, r.width, 2), color);
+            EditorGUI.DrawRect(new Rect(r.x, r.yMax - 2, r.width, 2), color);
+            EditorGUI.DrawRect(new Rect(r.x, r.y, 2, r.height), color);
+            EditorGUI.DrawRect(new Rect(r.xMax - 2, r.y, 2, r.height), color);
         }
 
         void DrawLog()
