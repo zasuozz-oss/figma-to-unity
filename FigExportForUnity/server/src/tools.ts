@@ -193,6 +193,183 @@ export function registerTools(server: McpServer, node: Node): void {
       }
     }
   );
+
+  // -------------------------------------------------------------------------
+  // Write tools — build UI Contract + node-level mutates
+  // -------------------------------------------------------------------------
+
+  server.tool(
+    "figma_build",
+    "Build a full native UI tree in Figma from a UI Contract (frames/text/shapes/assets with real fills, strokes, effects, auto-layout). Returns the created id tree {id,name,type,children} plus warnings. Requires the FigExportForUnity plugin open in Figma Desktop.",
+    toolInputSchemas.figma_build.shape,
+    async ({ contract, parentId }): Promise<ToolResult> => {
+      return renderResponse(() =>
+        node.sendWithParams("figma_build", undefined, { contract, parentId }, 120_000)
+      );
+    }
+  );
+
+  server.tool(
+    "figma_set_fill",
+    "Set the fill (solid color or gradient) of a Figma node by ID.",
+    toolInputSchemas.figma_set_fill.shape,
+    async ({ nodeId, paint }): Promise<ToolResult> => {
+      return renderResponse(() =>
+        node.sendWithParams("figma_set_fill", [nodeId], { paint })
+      );
+    }
+  );
+
+  server.tool(
+    "figma_set_stroke",
+    "Set the stroke (outline color, weight, align) of a Figma node by ID.",
+    toolInputSchemas.figma_set_stroke.shape,
+    async ({ nodeId, stroke }): Promise<ToolResult> => {
+      return renderResponse(() =>
+        node.sendWithParams("figma_set_stroke", [nodeId], { stroke })
+      );
+    }
+  );
+
+  server.tool(
+    "figma_set_text",
+    "Update a TEXT node: content, font family/style/size, color, alignment, line height, letter spacing. Only provided fields change.",
+    toolInputSchemas.figma_set_text.shape,
+    async ({ nodeId, text }): Promise<ToolResult> => {
+      return renderResponse(() =>
+        node.sendWithParams("figma_set_text", [nodeId], { text })
+      );
+    }
+  );
+
+  server.tool(
+    "figma_set_effects",
+    "Replace all effects (drop shadow, inner shadow, layer blur) on a Figma node by ID.",
+    toolInputSchemas.figma_set_effects.shape,
+    async ({ nodeId, effects }): Promise<ToolResult> => {
+      return renderResponse(() =>
+        node.sendWithParams("figma_set_effects", [nodeId], { effects })
+      );
+    }
+  );
+
+  server.tool(
+    "figma_set_layout",
+    "Apply or disable auto-layout on a FRAME node (mode, gap, padding, alignment).",
+    toolInputSchemas.figma_set_layout.shape,
+    async ({ nodeId, layout }): Promise<ToolResult> => {
+      return renderResponse(() =>
+        node.sendWithParams("figma_set_layout", [nodeId], { layout })
+      );
+    }
+  );
+
+  server.tool(
+    "figma_move_resize",
+    "Move and resize a Figma node: absolute x/y in parent coordinates plus width/height.",
+    toolInputSchemas.figma_move_resize.shape,
+    async ({ nodeId, rect }): Promise<ToolResult> => {
+      return renderResponse(() =>
+        node.sendWithParams("figma_move_resize", [nodeId], { rect })
+      );
+    }
+  );
+
+  server.tool(
+    "figma_place_asset",
+    "Replace a node with a raster/vector asset: custom bytes (PNG/SVG) or an Iconify icon by name (e.g. 'mdi:home'). Keeps the node's name, position and size. Returns the new nodeId.",
+    toolInputSchemas.figma_place_asset.shape,
+    async ({ nodeId, source }): Promise<ToolResult> => {
+      return renderResponse(() =>
+        node.sendWithParams("figma_place_asset", [nodeId], { source }, 60_000)
+      );
+    }
+  );
+
+  server.tool(
+    "figma_create_node",
+    "Create a new ContractNode subtree under a parent node, optionally at a specific child index. Returns the created id tree.",
+    toolInputSchemas.figma_create_node.shape,
+    async ({ parentId, node: contractNodeInput, index }): Promise<ToolResult> => {
+      return renderResponse(() =>
+        node.sendWithParams(
+          "figma_create_node",
+          undefined,
+          { parentId, node: contractNodeInput, index },
+          120_000
+        )
+      );
+    }
+  );
+
+  server.tool(
+    "figma_delete_node",
+    "Delete a Figma node by ID.",
+    toolInputSchemas.figma_delete_node.shape,
+    async ({ nodeId }): Promise<ToolResult> => {
+      return renderResponse(() =>
+        node.sendWithParams("figma_delete_node", [nodeId], {})
+      );
+    }
+  );
+
+  server.tool(
+    "figma_rename_node",
+    "Rename a Figma node by ID. Use PascalCase English names (BtnConfirm, TxtTitle, PnlItemList).",
+    toolInputSchemas.figma_rename_node.shape,
+    async ({ nodeId, name }): Promise<ToolResult> => {
+      return renderResponse(() =>
+        node.sendWithParams("figma_rename_node", [nodeId], { name })
+      );
+    }
+  );
+
+  // -------------------------------------------------------------------------
+  // Library tools — components + variables (design tokens)
+  // -------------------------------------------------------------------------
+
+  server.tool(
+    "figma_create_component",
+    "Turn existing nodes into Figma components. With combineAsVariants, the resulting components merge into one component set (variants). Returns the component ids (and componentSetId when combined).",
+    toolInputSchemas.figma_create_component.shape,
+    async ({ nodeIds, combineAsVariants, name }): Promise<ToolResult> => {
+      return renderResponse(() =>
+        node.sendWithParams(
+          "figma_create_component",
+          nodeIds,
+          { combineAsVariants, name },
+          60_000
+        )
+      );
+    }
+  );
+
+  server.tool(
+    "figma_create_variable_collection",
+    "Create a local variable collection (design tokens) with optional modes (e.g. Light/Dark) and variables. Color values are RGBA arrays with 0-1 channels. Returns collection, mode and variable ids for later figma_bind_variable calls.",
+    toolInputSchemas.figma_create_variable_collection.shape,
+    async ({ name, modes, variables }): Promise<ToolResult> => {
+      return renderResponse(() =>
+        node.sendWithParams(
+          "figma_create_variable_collection",
+          undefined,
+          { name, modes, variables },
+          60_000
+        )
+      );
+    }
+  );
+
+  server.tool(
+    "figma_bind_variable",
+    "Bind a variable to a node field: fill/stroke take a color variable; cornerRadius/gap/padding take a number variable. Get variable ids from get_variable_defs or figma_create_variable_collection.",
+    toolInputSchemas.figma_bind_variable.shape,
+    async ({ nodeId, field, variableId }): Promise<ToolResult> => {
+      return renderResponse(() =>
+        node.sendWithParams("figma_bind_variable", [nodeId], { field, variableId })
+      );
+    }
+  );
 }
 
 export async function executeSaveScreenshots(

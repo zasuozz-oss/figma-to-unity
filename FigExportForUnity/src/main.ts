@@ -10,9 +10,15 @@ import type {
 } from './types';
 import { DEFAULT_EXPORT_OPTIONS, DEFAULT_EXPORT_SCALE } from './types';
 import { traverseNode } from './traverser';
+import {
+    buildContract, setFill, setStroke, setText, setEffects, setLayout,
+    moveResize, placeAsset, createNodeUnder, deleteNode, renameNode,
+    createComponents, createVariableCollection, bindVariable,
+} from './builder';
 
 // Show the plugin UI
-figma.showUI(__html__, { width: 600, height: 750, themeColors: true });
+// Mở ở kích thước thu nhỏ (khớp body.minimized trong ui.html); doRestore phóng lại 600x750.
+figma.showUI(__html__, { width: 250, height: 36, themeColors: true });
 
 // Flag to suppress selectionchange when we programmatically select a node
 var suppressSelectionChange = false;
@@ -484,6 +490,12 @@ function serializeNode(node: BaseNode, depth: number = 1): any {
     return result;
 }
 
+function firstNodeId(req: any): string {
+    var ids = req.nodeIds || [];
+    if (ids.length === 0) throw new Error(req.type + ': missing nodeIds[0]');
+    return ids[0];
+}
+
 async function handleMcpRequest(req: any): Promise<void> {
     var response: any = { type: req.type, requestId: req.requestId };
 
@@ -671,6 +683,199 @@ async function handleMcpRequest(req: any): Promise<void> {
                 } finally {
                     setTimeout(function () { suppressDocumentChange = false; }, 300);
                 }
+                break;
+            }
+
+            case 'select_node': {
+                var selNodeId = (req.nodeIds && req.nodeIds[0]) || '';
+                var selNode = figma.getNodeById(selNodeId) as SceneNode | null;
+                if (!selNode) { response.error = 'Node not found: ' + selNodeId; break; }
+                // Switch to the node's page if it lives on another page.
+                var selPage = selNode as BaseNode;
+                while (selPage.parent && selPage.type !== 'PAGE') selPage = selPage.parent;
+                if (selPage.type === 'PAGE' && selPage.id !== figma.currentPage.id) {
+                    figma.currentPage = selPage as PageNode;
+                }
+                figma.currentPage.selection = [selNode];
+                figma.viewport.scrollAndZoomIntoView([selNode]);
+                response.data = { id: selNode.id, name: selNode.name };
+                break;
+            }
+
+            case 'rename_node': {
+                var rnNodeId = (req.nodeIds && req.nodeIds[0]) || '';
+                var rnName = (req.params && req.params.name) || '';
+                var rnNode = figma.getNodeById(rnNodeId) as SceneNode | null;
+                if (!rnNode) { response.error = 'Node not found: ' + rnNodeId; break; }
+                if (!rnName) { response.error = 'Empty name'; break; }
+                rnNode.name = String(rnName);
+                response.data = { id: rnNode.id, name: rnNode.name };
+                break;
+            }
+
+            case 'reparent_node': {
+                var rpNodeId = (req.nodeIds && req.nodeIds[0]) || '';
+                var rpParentId = (req.params && req.params.newParentId) || '';
+                var rpNode = figma.getNodeById(rpNodeId) as SceneNode | null;
+                var rpParent = figma.getNodeById(rpParentId) as BaseNode | null;
+                if (!rpNode) { response.error = 'Node not found: ' + rpNodeId; break; }
+                if (!rpParent) { response.error = 'Parent not found: ' + rpParentId; break; }
+                if (!('appendChild' in rpParent)) {
+                    response.error = 'Target "' + (rpParent as SceneNode).name + '" (' + rpParent.type + ') cannot contain children.';
+                    break;
+                }
+                // Guard against cycles: parent must not be the node itself or a descendant.
+                var rpCursor: BaseNode | null = rpParent;
+                var rpCycle = false;
+                while (rpCursor) {
+                    if (rpCursor.id === rpNode.id) { rpCycle = true; break; }
+                    rpCursor = rpCursor.parent;
+                }
+                if (rpCycle) { response.error = 'Cannot move a node into itself or its own descendant.'; break; }
+
+                var rpContainer = rpParent as BaseNode & ChildrenMixin;
+                var rpIndex = (req.params && typeof req.params.index === 'number') ? req.params.index : -1;
+                if (rpIndex >= 0 && rpIndex <= rpContainer.children.length) {
+                    rpContainer.insertChild(rpIndex, rpNode);
+                } else {
+                    rpContainer.appendChild(rpNode);
+                }
+                response.data = { id: rpNode.id, parentId: rpContainer.id };
+                break;
+            }
+
+            case 'delete_node': {
+                var delNodeId = (req.nodeIds && req.nodeIds[0]) || '';
+                var delNode = figma.getNodeById(delNodeId) as SceneNode | null;
+                if (!delNode) { response.error = 'Node not found: ' + delNodeId; break; }
+                var delName = delNode.name;
+                delNode.remove();
+                response.data = { id: delNodeId, name: delName, deleted: true };
+                break;
+            }
+
+            case 'list_nodes': {
+                var lnMaxDepth = (req.params && typeof req.params.maxDepth === 'number')
+                    ? req.params.maxDepth : 2;
+                // Optional: list the children of a specific node instead of the page
+                // root. Depths are relative to those children (1-based); the Unity
+                // side offsets them by the parent's depth. Enables lazy expansion.
+                var lnFromId = (req.params && typeof req.params.fromId === 'string')
+                    ? req.params.fromId : null;
+                var lnCap = 800; // safety limit to avoid overloading the UI
+                var lnOut: Array<{ id: string; name: string; type: string; depth: number; hasChildren: boolean }> = [];
+                var lnWalk = function (nodes: ReadonlyArray<SceneNode>, depth: number) {
+                    for (var i = 0; i < nodes.length; i++) {
+                        if (lnOut.length >= lnCap) return;
+                        var n = nodes[i];
+                        var kids = ('children' in n) ? (n as ChildrenMixin).children : [];
+                        lnOut.push({
+                            id: n.id,
+                            name: n.name,
+                            type: n.type,
+                            depth: depth,
+                            hasChildren: kids.length > 0,
+                        });
+                        if (depth < lnMaxDepth && kids.length > 0)
+                            lnWalk(kids as ReadonlyArray<SceneNode>, depth + 1);
+                    }
+                };
+                var lnRoots: ReadonlyArray<SceneNode>;
+                if (lnFromId) {
+                    var lnNode = figma.getNodeById(lnFromId);
+                    lnRoots = (lnNode && 'children' in lnNode)
+                        ? (lnNode as ChildrenMixin).children as ReadonlyArray<SceneNode>
+                        : [];
+                } else {
+                    lnRoots = figma.currentPage.children;
+                }
+                lnWalk(lnRoots, 1);
+                response.data = { nodes: lnOut, page: figma.currentPage.name, truncated: lnOut.length >= lnCap };
+                break;
+            }
+
+            case 'figma_build': {
+                var bp: any = req.params || {};
+                if (!bp.contract) throw new Error('figma_build: missing params.contract');
+                response.data = await buildContract(bp.contract, bp.parentId);
+                break;
+            }
+
+            case 'figma_set_fill': {
+                response.data = setFill(firstNodeId(req), ((req.params || {}) as any).paint);
+                break;
+            }
+
+            case 'figma_set_stroke': {
+                response.data = setStroke(firstNodeId(req), ((req.params || {}) as any).stroke);
+                break;
+            }
+
+            case 'figma_set_text': {
+                response.data = await setText(firstNodeId(req), ((req.params || {}) as any).text || {});
+                break;
+            }
+
+            case 'figma_set_effects': {
+                response.data = setEffects(firstNodeId(req), ((req.params || {}) as any).effects);
+                break;
+            }
+
+            case 'figma_set_layout': {
+                response.data = setLayout(firstNodeId(req), ((req.params || {}) as any).layout);
+                break;
+            }
+
+            case 'figma_move_resize': {
+                response.data = moveResize(firstNodeId(req), ((req.params || {}) as any).rect);
+                break;
+            }
+
+            case 'figma_place_asset': {
+                response.data = await placeAsset(firstNodeId(req), ((req.params || {}) as any).source);
+                break;
+            }
+
+            case 'figma_create_node': {
+                var cp: any = req.params || {};
+                if (!cp.parentId || !cp.node) throw new Error('figma_create_node: missing parentId or node');
+                response.data = await createNodeUnder(cp.parentId, cp.node, cp.index);
+                break;
+            }
+
+            case 'figma_delete_node': {
+                response.data = deleteNode(firstNodeId(req));
+                break;
+            }
+
+            case 'figma_rename_node': {
+                var rp: any = req.params || {};
+                if (!rp.name) throw new Error('figma_rename_node: missing name');
+                response.data = renameNode(firstNodeId(req), rp.name);
+                break;
+            }
+
+            case 'figma_create_component': {
+                var ccp: any = req.params || {};
+                var ccIds: string[] = req.nodeIds || [];
+                if (ccIds.length === 0) throw new Error('figma_create_component: missing nodeIds');
+                response.data = createComponents(ccIds, ccp.combineAsVariants, ccp.name);
+                break;
+            }
+
+            case 'figma_create_variable_collection': {
+                var cvp: any = req.params || {};
+                if (!cvp.name) throw new Error('figma_create_variable_collection: missing name');
+                response.data = createVariableCollection(cvp.name, cvp.modes, cvp.variables);
+                break;
+            }
+
+            case 'figma_bind_variable': {
+                var bvp: any = req.params || {};
+                if (!bvp.field || !bvp.variableId) {
+                    throw new Error('figma_bind_variable: missing field or variableId');
+                }
+                response.data = await bindVariable(firstNodeId(req), bvp.field, bvp.variableId);
                 break;
             }
 

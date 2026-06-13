@@ -154,27 +154,44 @@ figma-to-unity/
 
 ## 🚀 快速开始
 
-### 1. 构建 Figma 插件
+### 1. 构建并启动全部（一条命令）
+
+支持 **macOS、Linux 和 Windows（git-bash）**：
 
 ```bash
-cd FigExportForUnity
-npm install
-npm run build
+./setup.sh
 ```
 
-在 Figma Desktop 中：
+该命令会安装依赖、构建 Figma 插件**和** MCP bridge 服务器、打印安装指南，然后在 `ws://localhost:1994` 上启动 bridge 服务器。
+
+随时管理服务器：
+
+```bash
+./setup.sh start      # 后台启动 bridge 服务器
+./setup.sh stop       # 停止
+./setup.sh restart    # 重启
+./setup.sh status     # 检查是否在运行
+./setup.sh logs       # 实时查看服务器日志
+./setup.sh build      # 仅重新构建插件 + 服务器（不启动）
+```
+
+<details>
+<summary>手动构建（不使用 setup.sh）</summary>
+
+```bash
+# Figma 插件
+cd FigExportForUnity && npm install && npm run build
+
+# MCP bridge 服务器
+cd FigExportForUnity/server && npm install && npx tsc   # 或：bun run build
+```
+</details>
+
+然后在 Figma Desktop 中加载插件：
 1. **插件** → **开发** → **从 manifest 导入插件...**
 2. 选择 `FigExportForUnity/manifest.json`
 
-### 2. 构建 MCP Bridge 服务器
-
-```bash
-cd FigExportForUnity/server
-npm install       # 或：bun install
-npx tsc           # 或：bun run build
-```
-
-### 3. 配置 MCP 客户端
+### 2. 配置 MCP 客户端
 
 在 AI 工具的 MCP 配置文件中添加：
 
@@ -190,8 +207,13 @@ npx tsc           # 或：bun run build
 ```
 
 > 将 `<绝对路径>` 替换为本机上该仓库的完整路径。
+>
+> **Claude Code：** 在仓库根目录注册一次该服务，然后用 `claude mcp list` 确认：
+> ```bash
+> claude mcp add figma-bridge --scope project -- node <绝对路径>/FigExportForUnity/server/dist/index.js
+> ```
 
-### 4. 安装 Unity 导入器
+### 3. 安装 Unity 导入器
 
 **方式 A — Git URL（推荐）：**
 ```
@@ -324,16 +346,15 @@ AI agent（Claude Code、Cursor 等）可以端到端运行整条管线——无
 ## 📝 开发
 
 ```bash
-# Figma 插件——单次构建
-cd FigExportForUnity
-npm run build
+# 构建全部 + 启动 bridge 服务器（macOS / Linux / git-bash）
+./setup.sh
 
 # Figma 插件——监听模式（保存时自动重建）
+cd FigExportForUnity
 npm run watch
 
-# MCP 服务器——构建
-cd FigExportForUnity/server
-npx tsc
+# 仅重新构建插件 + 服务器，不启动（任意平台）
+./setup.sh build
 ```
 
 ---

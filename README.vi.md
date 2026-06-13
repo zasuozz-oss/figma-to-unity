@@ -154,27 +154,44 @@ Bất kỳ AI tool nào hỗ trợ [Model Context Protocol](https://modelcontext
 
 ## 🚀 Bắt Đầu Nhanh
 
-### 1. Build Figma Plugin
+### 1. Build & chạy mọi thứ (một lệnh)
+
+Chạy được trên **macOS, Linux, và Windows (git-bash)**:
 
 ```bash
-cd FigExportForUnity
-npm install
-npm run build
+./setup.sh
 ```
 
-Trong Figma Desktop:
+Lệnh này cài dependencies, build cả Figma plugin **lẫn** MCP bridge server, in hướng dẫn cài đặt, rồi khởi động bridge server trên `ws://localhost:1994`.
+
+Quản lý server bất cứ lúc nào:
+
+```bash
+./setup.sh start      # khởi động bridge server (chạy nền)
+./setup.sh stop       # dừng server
+./setup.sh restart    # khởi động lại
+./setup.sh status     # kiểm tra server có đang chạy không
+./setup.sh logs       # xem log server theo thời gian thực
+./setup.sh build      # chỉ build lại plugin + server (không start)
+```
+
+<details>
+<summary>Build thủ công (không dùng setup.sh)</summary>
+
+```bash
+# Figma plugin
+cd FigExportForUnity && npm install && npm run build
+
+# MCP bridge server
+cd FigExportForUnity/server && npm install && npx tsc   # hoặc: bun run build
+```
+</details>
+
+Sau đó nạp plugin vào Figma Desktop:
 1. **Plugins** → **Development** → **Import plugin from manifest...**
 2. Chọn `FigExportForUnity/manifest.json`
 
-### 2. Build MCP Bridge Server
-
-```bash
-cd FigExportForUnity/server
-npm install       # hoặc: bun install
-npx tsc           # hoặc: bun run build
-```
-
-### 3. Cấu hình MCP Client
+### 2. Cấu hình MCP Client
 
 Thêm vào file cấu hình MCP của AI tool:
 
@@ -190,8 +207,13 @@ Thêm vào file cấu hình MCP của AI tool:
 ```
 
 > Thay `<đường-dẫn-tuyệt-đối>` bằng đường dẫn đầy đủ tới repo trên máy bạn.
+>
+> **Claude Code:** đăng ký server một lần từ thư mục gốc repo, rồi kiểm tra bằng `claude mcp list`:
+> ```bash
+> claude mcp add figma-bridge --scope project -- node <đường-dẫn-tuyệt-đối>/FigExportForUnity/server/dist/index.js
+> ```
 
-### 4. Cài đặt Unity Importer
+### 3. Cài đặt Unity Importer
 
 **Cách A — Git URL (khuyên dùng):**
 ```
@@ -324,16 +346,15 @@ Yêu cầu: Figma Desktop đang mở plugin (bước 1), và Unity Editor đang 
 ## 📝 Phát Triển
 
 ```bash
-# Figma Plugin — build một lần
-cd FigExportForUnity
-npm run build
+# Build mọi thứ + khởi động bridge server (macOS / Linux / git-bash)
+./setup.sh
 
 # Figma Plugin — watch mode (auto-rebuild khi save)
+cd FigExportForUnity
 npm run watch
 
-# MCP Server — build
-cd FigExportForUnity/server
-npx tsc
+# Build lại plugin + server mà không start (mọi nền tảng)
+./setup.sh build
 ```
 
 ---

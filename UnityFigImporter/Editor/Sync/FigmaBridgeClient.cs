@@ -27,6 +27,15 @@ namespace FigmaImporter.Sync
         [Serializable]
         public class ExportResult { public string nodeId; public string outputDir; public int assetCount; public string name; public int nodeCount; public string previewFile; }
 
+        [Serializable]
+        public class CommandResult { public string id; public string name; public string parentId; public bool deleted; }
+
+        [Serializable]
+        public class NodeBrief { public string id; public string name; public string type; public int depth; public bool hasChildren; }
+
+        [Serializable]
+        public class NodeListResult { public NodeBrief[] nodes; public string page; public bool truncated; }
+
         class Envelope<T> { public T data; public string error; }
 
         public bool TryHealth(out HealthInfo info, out string error)
@@ -39,10 +48,57 @@ namespace FigmaImporter.Sync
             return Get("/api/selection", out info, out error);
         }
 
-        public bool TryExportElement(string nodeId, string outputDir, out ExportResult result, out string error)
+        public bool TryExportElement(string nodeId, string outputDir, out ExportResult result, out string error, float scale = 0f)
         {
-            var body = JsonConvert.SerializeObject(new { nodeId, outputDir, includePreview = true });
+            var body = scale > 0f
+                ? JsonConvert.SerializeObject(new { nodeId, outputDir, includePreview = true, scale })
+                : JsonConvert.SerializeObject(new { nodeId, outputDir, includePreview = true });
             return Post("/api/export_element", body, out result, out error);
+        }
+
+        /// <summary>Generic node-mutation passthrough to the plugin (select/rename/reparent/delete).</summary>
+        public bool TryCommand(string type, string[] nodeIds, object @params, out CommandResult result, out string error)
+        {
+            var body = JsonConvert.SerializeObject(new { type, nodeIds, @params });
+            return Post("/api/command", body, out result, out error);
+        }
+
+        public bool TrySelectNode(string nodeId, out string error)
+        {
+            return TryCommand("select_node", new[] { nodeId }, null, out _, out error);
+        }
+
+        public bool TryRenameNode(string nodeId, string name, out string error)
+        {
+            return TryCommand("rename_node", new[] { nodeId }, new { name }, out _, out error);
+        }
+
+        public bool TryReparentNode(string nodeId, string newParentId, int index, out string error)
+        {
+            return TryCommand("reparent_node", new[] { nodeId }, new { newParentId, index }, out _, out error);
+        }
+
+        public bool TryDeleteNode(string nodeId, out string error)
+        {
+            return TryCommand("delete_node", new[] { nodeId }, null, out _, out error);
+        }
+
+        /// <summary>
+        /// List Figma nodes, flattened, capped to maxDepth levels. When fromId is set,
+        /// lists that node's children (depths relative, 1-based) instead of the page root.
+        /// </summary>
+        public bool TryListNodes(int maxDepth, out NodeListResult result, out string error, string fromId = null)
+        {
+            object @params = string.IsNullOrEmpty(fromId)
+                ? (object)new { maxDepth }
+                : new { maxDepth, fromId };
+            var body = JsonConvert.SerializeObject(new
+            {
+                type = "list_nodes",
+                nodeIds = new string[0],
+                @params,
+            });
+            return Post("/api/command", body, out result, out error);
         }
 
         bool Get<T>(string path, out T value, out string error)

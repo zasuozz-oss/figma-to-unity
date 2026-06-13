@@ -154,27 +154,44 @@ Any AI tool supporting [Model Context Protocol](https://modelcontextprotocol.io/
 
 ## 🚀 Quick Start
 
-### 1. Build Figma Plugin
+### 1. Build & start everything (one command)
+
+Works on **macOS, Linux, and Windows (git-bash)**:
 
 ```bash
-cd FigExportForUnity
-npm install
-npm run build
+./setup.sh
 ```
 
-Then in Figma Desktop:
+This installs dependencies, builds the Figma plugin **and** the MCP bridge server, prints the install guide, then starts the bridge server on `ws://localhost:1994`.
+
+Manage the server anytime:
+
+```bash
+./setup.sh start      # start the bridge server (background)
+./setup.sh stop       # stop it
+./setup.sh restart    # restart it
+./setup.sh status     # check if it is running
+./setup.sh logs       # follow the server log
+./setup.sh build      # rebuild plugin + server only (no start)
+```
+
+<details>
+<summary>Manual build (without setup.sh)</summary>
+
+```bash
+# Figma plugin
+cd FigExportForUnity && npm install && npm run build
+
+# MCP bridge server
+cd FigExportForUnity/server && npm install && npx tsc   # or: bun run build
+```
+</details>
+
+Then load the plugin in Figma Desktop:
 1. **Plugins** → **Development** → **Import plugin from manifest...**
 2. Select `FigExportForUnity/manifest.json`
 
-### 2. Build MCP Bridge Server
-
-```bash
-cd FigExportForUnity/server
-npm install       # or: bun install
-npx tsc           # or: bun run build
-```
-
-### 3. Configure MCP Client
+### 2. Configure MCP Client
 
 Add to your AI tool's MCP config:
 
@@ -190,8 +207,13 @@ Add to your AI tool's MCP config:
 ```
 
 > Replace `<absolute-path>` with the full path to this repo on your machine.
+>
+> **Claude Code:** register the server once from the repo root, then confirm with `claude mcp list`:
+> ```bash
+> claude mcp add figma-bridge --scope project -- node <absolute-path>/FigExportForUnity/server/dist/index.js
+> ```
 
-### 4. Install Unity Importer
+### 3. Install Unity Importer
 
 **Option A — Git URL (recommended):**
 ```
@@ -324,16 +346,15 @@ Requirements: Figma Desktop with the plugin open (step 1), and a running Unity E
 ## 📝 Development
 
 ```bash
-# Figma Plugin — build once
-cd FigExportForUnity
-npm run build
+# Build everything + start the bridge server (macOS / Linux / git-bash)
+./setup.sh
 
 # Figma Plugin — watch mode (auto-rebuild on save)
+cd FigExportForUnity
 npm run watch
 
-# MCP Server — build
-cd FigExportForUnity/server
-npx tsc
+# Rebuild plugin + server without starting (any platform)
+./setup.sh build
 ```
 
 ---

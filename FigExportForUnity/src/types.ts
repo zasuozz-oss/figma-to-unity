@@ -268,17 +268,27 @@ export type McpRequestType =
     | 'get_design_context'
     | 'get_variable_defs'
     | 'get_screenshot'
-    | 'export_element';
+    | 'export_element'
+    // Write tools (UI Contract build + node-level mutate)
+    | 'figma_build'
+    | 'figma_set_fill'
+    | 'figma_set_stroke'
+    | 'figma_set_text'
+    | 'figma_set_effects'
+    | 'figma_set_layout'
+    | 'figma_move_resize'
+    | 'figma_place_asset'
+    | 'figma_create_node'
+    | 'figma_delete_node'
+    | 'figma_rename_node';
 
 export interface McpServerRequest {
     type: McpRequestType;
     requestId: string;
     nodeIds?: string[];
-    params?: {
-        format?: 'PNG' | 'SVG' | 'JPG' | 'PDF';
-        scale?: number;
-        depth?: number;
-    };
+    // Nới rộng (spec): read tools dùng format/scale/depth; write tools tải payload
+    // JSON tuỳ ý (UIContract lồng nhau, paint/stroke/effects, asset bytes...).
+    params?: Record<string, unknown>;
 }
 
 export interface McpPluginResponse {

@@ -69,6 +69,10 @@ Desktop.ini
 *.log
 npm-debug.log*
 
+# Figma bridge server runtime (created by setup.sh)
+.figma-bridge.pid
+.figma-bridge.log
+
 # Coverage
 coverage/
 
@@ -80,4 +84,10 @@ CLAUDE.md
 .agents/
 .claude/
 .codegraph/
-docs/
+
+# Private docs / workflow notes (keep the public plugin guide)
+docs/*
+!docs/figma-plugin-guide.md
+
+# Local MCP client config (machine-specific absolute path)
+.mcp.json

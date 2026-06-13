@@ -1295,7 +1295,7 @@ function downloadBlob(blob: Blob, fileName: string) {
 // Minimize / Restore
 // =============================================================================
 
-var isMinimized = false;
+var isMinimized = true; // mở plugin ở chế độ thu nhỏ (body.minimized + showUI 250x36)
 var savedWidth = 600;
 var savedHeight = 750;
 var minimizeBtn = document.getElementById('minimize-btn')!;

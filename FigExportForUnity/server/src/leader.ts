@@ -62,6 +62,11 @@ export class Leader {
           return;
         }
 
+        if (req.url === "/api/command" && req.method === "POST") {
+          this.handleCommand(req, res);
+          return;
+        }
+
         res.writeHead(404);
         res.end("Not found");
       });
@@ -86,9 +91,12 @@ export class Leader {
         );
       });
 
-      server.listen(this.port, () => {
+      // Bind loopback only: the bridge runs Figma tools + REST with no auth, so it
+      // must never be reachable from the LAN — all clients (plugin, followers, Unity)
+      // connect over localhost.
+      server.listen(this.port, "127.0.0.1", () => {
         this.server = server;
-        console.error(`Leader listening on :${this.port}`);
+        console.error(`Leader listening on 127.0.0.1:${this.port}`);
         resolve();
       });
     });
@@ -177,6 +185,48 @@ export class Leader {
         };
         const result = await exportElementToDisk(this.bridge, input);
         this.sendJSON(res, 200, { data: result });
+      } catch (err) {
+        this.sendJSON(res, 200, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    });
+  }
+
+  /**
+   * Generic node-mutation passthrough for the Unity sync window.
+   * Body: { type: string, nodeIds?: string[], params?: object }
+   * Forwards to the plugin via the bridge and returns { data } or { error }.
+   */
+  private handleCommand(
+    req: http.IncomingMessage,
+    res: http.ServerResponse
+  ): void {
+    let body = "";
+    req.on("data", (chunk: Buffer) => {
+      body += chunk.toString();
+    });
+    req.on("end", async () => {
+      try {
+        const input = JSON.parse(body || "{}") as {
+          type?: string;
+          nodeIds?: string[];
+          params?: Record<string, unknown>;
+        };
+        if (!input.type) {
+          this.sendJSON(res, 400, { error: "Missing command type" });
+          return;
+        }
+        const resp = await this.bridge.sendWithParams(
+          input.type,
+          input.nodeIds,
+          input.params
+        );
+        this.sendJSON(
+          res,
+          200,
+          resp.error ? { error: resp.error } : { data: resp.data }
+        );
       } catch (err) {
         this.sendJSON(res, 200, {
           error: err instanceof Error ? err.message : String(err),
